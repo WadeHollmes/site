@@ -9,8 +9,8 @@ const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const NOTION_API_KEY = process.env.NOTION_API_KEY || "";
 const NOTION_DATABASE_ID = (process.env.NOTION_DATABASE_ID || "").replace(/-/g, "");
-const NOTION_VERSION = process.env.NOTION_VERSION || "2022-06-28";
-const NOTION_TIMEOUT_MS = Number(process.env.NOTION_TIMEOUT_MS || 8000);
+const NOTION_VERSION = process.env.NOTION_VERSION || "2025-09-03";
+const NOTION_TIMEOUT_MS = Number(process.env.NOTION_TIMEOUT_MS || 10000);
 const PRODUCTS_CACHE_TTL_MS = Number(process.env.PRODUCTS_CACHE_TTL_MS || 60000);
 const WHATSAPP_LOJA = process.env.WHATSAPP_LOJA || "5511999999999";
 
@@ -117,6 +117,7 @@ async function fetchNotionProducts() {
 
   if (!response.ok) {
     const details = await response.text();
+    console.error(`Erro Notion API - Status: ${response.status}, Details: ${details}`);
     throw new Error(`Erro Notion ${response.status}: ${details}`);
   }
 

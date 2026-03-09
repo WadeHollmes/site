@@ -20,7 +20,7 @@ Variaveis no `.env`:
 
 - `NOTION_API_KEY`: token de integracao interna do Notion.
 - `NOTION_DATABASE_ID`: id do database de produtos.
-- `NOTION_VERSION`: versao da API (padrao `2022-06-28`).
+- `NOTION_VERSION`: versao da API (padrao `2025-09-03`).
 - `WHATSAPP_LOJA`: numero WhatsApp da loja com DDI e DDD (ex: 5511999999999).
 - `PORT`: porta local (padrao `3000`).
 

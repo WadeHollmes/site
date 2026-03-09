@@ -141,6 +141,7 @@ async function loadProducts() {
     products = [...fallbackProducts];
     renderStatus("Nenhum produto ativo encontrado no Notion. Exibindo fallback local.");
   } catch (error) {
+    console.error("Erro ao carregar produtos:", error);
     products = [...fallbackProducts];
     renderStatus("Erro ao carregar API. Exibindo produtos locais de exemplo.");
   }
