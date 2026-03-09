@@ -1,0 +1,14 @@
+{
+  "name": "loja-galeria-notion",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Loja minimalista com produtos gerenciados no Notion e checkout via WhatsApp",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

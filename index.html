@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Loja Galeria</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>Loja Galeria</h1>
+        <p>Selecione os itens e finalize no WhatsApp.</p>
+      </div>
+      <a class="ghost-btn" href="#checkout">Finalizar</a>
+    </header>
+
+    <main>
+      <section class="gallery" id="gallery"></section>
+    </main>
+
+    <aside class="checkout" id="checkout" aria-labelledby="checkout-title">
+      <h2 id="checkout-title">Seu pedido</h2>
+
+      <label for="customer-name">Seu nome</label>
+      <input id="customer-name" type="text" placeholder="Ex.: Maria" />
+
+      <label for="customer-phone">WhatsApp da loja</label>
+      <input
+        id="customer-phone"
+        type="tel"
+        placeholder="Ex.: 5511999999999"
+        value="5511999999999"
+      />
+
+      <label for="notes">Observações</label>
+      <textarea
+        id="notes"
+        rows="4"
+        placeholder="Ex.: Quero entrega para amanhã"
+      ></textarea>
+
+      <div class="summary">
+        <span id="selected-count">0 itens selecionados</span>
+        <strong id="selected-total">R$ 0,00</strong>
+      </div>
+
+      <ul id="selected-list" class="selected-list"></ul>
+
+      <button id="send-whatsapp" class="whatsapp-btn" type="button" disabled>
+        Enviar pedido no WhatsApp
+      </button>
+    </aside>
+
+    <template id="product-card-template">
+      <article class="card">
+        <button class="select-btn" type="button" aria-label="Selecionar item"></button>
+        <div class="image-wrap"></div>
+        <div class="card-body">
+          <h3></h3>
+          <p class="description"></p>
+          <span class="price"></span>
+        </div>
+      </article>
+    </template>
+
+    <script src="script.js"></script>
+  </body>
+</html>
