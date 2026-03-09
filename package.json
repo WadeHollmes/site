@@ -3,10 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "description": "Loja minimalista com produtos gerenciados no Notion e checkout via WhatsApp",
-  "main": "server.js",
+  "main": "app.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js"
+    "start": "node app.js",
+    "dev": "node --watch app.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2"
   },
   "engines": {
     "node": ">=18"

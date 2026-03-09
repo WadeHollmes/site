@@ -12,6 +12,8 @@ Agora os produtos podem vir de um banco no Notion, usando API no backend para ma
 4. Execute `npm run dev`.
 5. Abra `http://localhost:3000`.
 
+Observacao: a aplicacao usa Express com entrypoint em `app.js` para melhor compatibilidade em ambientes Node gerenciados.
+
 ## Configuracao do Notion
 
 Variaveis no `.env`:
