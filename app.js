@@ -52,6 +52,14 @@ const PRODUCT_MAPPING_HELP = {
   active: "Active/checkbox",
 };
 
+function getQueryEndpointCandidates() {
+  if (NOTION_VERSION >= "2025-09-03") {
+    return ["data_sources", "data-sources", "databases"];
+  }
+
+  return ["databases"];
+}
+
 function parseTitle(prop) {
   if (!prop || prop.type !== "title" || !Array.isArray(prop.title)) return "";
   return prop.title.map((t) => t.plain_text).join("").trim();
@@ -190,9 +198,7 @@ async function fetchNotionProducts() {
     ? NOTION_DATABASE_ID_CANDIDATES
     : [NOTION_DATABASE_ID];
 
-  // Na versão 2025-09-03+, o endpoint mudou de /databases/ para /data-sources/
-  const isNewApiVersion = NOTION_VERSION >= "2025-09-03";
-  const endpointBase = isNewApiVersion ? "data-sources" : "databases";
+  const endpointCandidates = getQueryEndpointCandidates();
 
   let payload = null;
   let lastError = {
@@ -202,28 +208,32 @@ async function fetchNotionProducts() {
     version: NOTION_VERSION,
   };
 
-  for (const candidateId of candidateIds) {
-    const queryUrl = `https://api.notion.com/v1/${endpointBase}/${candidateId}/query`;
+  for (const endpointBase of endpointCandidates) {
+    for (const candidateId of candidateIds) {
+      const queryUrl = `https://api.notion.com/v1/${endpointBase}/${candidateId}/query`;
 
-    console.log("Tentando Notion API:", {
-      url: queryUrl,
-      endpointBase,
-      databaseIdLength: candidateId.length,
-      version: NOTION_VERSION,
-    });
+      console.log("Tentando Notion API:", {
+        url: queryUrl,
+        endpointBase,
+        databaseIdLength: candidateId.length,
+        version: NOTION_VERSION,
+      });
 
-    const attempt = await queryNotion(queryUrl, NOTION_VERSION);
-    if (attempt.ok) {
-      payload = attempt.payload;
-      break;
+      const attempt = await queryNotion(queryUrl, NOTION_VERSION);
+      if (attempt.ok) {
+        payload = attempt.payload;
+        break;
+      }
+
+      lastError = {
+        status: attempt.status,
+        details: attempt.details,
+        url: queryUrl,
+        version: NOTION_VERSION,
+      };
     }
 
-    lastError = {
-      status: attempt.status,
-      details: attempt.details,
-      url: queryUrl,
-      version: NOTION_VERSION,
-    };
+    if (payload) break;
   }
 
   if (!payload) {
@@ -286,9 +296,7 @@ app.get("/api/products", async (_, res) => {
 app.get("/api/test-notion", async (_, res) => {
   const urlUsersMe = "https://api.notion.com/v1/users/me";
   const urlSearch = "https://api.notion.com/v1/search";
-  const isNewApiVersion = NOTION_VERSION >= "2025-09-03";
-  const endpointBase = isNewApiVersion ? "data-sources" : "databases";
-  const urlQuery = `https://api.notion.com/v1/${endpointBase}/${NOTION_DATABASE_ID}/query`;
+  const endpointCandidates = getQueryEndpointCandidates();
 
   async function rawGet(url) {
     try {
@@ -324,19 +332,38 @@ app.get("/api/test-notion", async (_, res) => {
     }
   }
 
-  const [usersMe, search, query] = await Promise.all([
+  const [usersMe, search] = await Promise.all([
     rawGet(urlUsersMe),
     rawPost(urlSearch, { filter: { property: "object", value: "data_source" }, page_size: 5 }),
-    rawPost(urlQuery, { page_size: 1 }),
   ]);
+
+  const queryAttempts = [];
+  let query = null;
+
+  for (const endpointBase of endpointCandidates) {
+    const urlQuery = `https://api.notion.com/v1/${endpointBase}/${NOTION_DATABASE_ID}/query`;
+    const attempt = await rawPost(urlQuery, { page_size: 1 });
+    const report = { endpointBase, url: urlQuery, ...attempt };
+    queryAttempts.push(report);
+
+    if (attempt.status >= 200 && attempt.status < 300) {
+      query = report;
+      break;
+    }
+  }
+
+  if (!query && queryAttempts.length > 0) {
+    query = queryAttempts[queryAttempts.length - 1];
+  }
 
   res.status(200).json({
     notionVersion: NOTION_VERSION,
     databaseId: NOTION_DATABASE_ID,
-    endpointBase,
+    endpointCandidates,
     usersMe: { url: urlUsersMe, ...usersMe },
     search: { url: urlSearch, ...search },
-    query: { url: urlQuery, ...query },
+    query,
+    queryAttempts,
   });
 });
 
