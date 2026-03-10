@@ -120,20 +120,20 @@ async function loadProducts() {
 
     const payload = await response.json();
 
+    // SEMPRE atualizar o WhatsApp, independente do estado
+    if (payload.whatsapp) {
+      WHATSAPP_LOJA = payload.whatsapp;
+      console.log("WhatsApp atualizado:", WHATSAPP_LOJA);
+    }
+
     if (!payload.configured) {
       products = [...fallbackProducts];
-      if (payload.whatsapp) {
-        WHATSAPP_LOJA = payload.whatsapp;
-      }
       renderStatus("Notion nao configurado ainda. Exibindo produtos locais de exemplo.");
       return;
     }
 
     if (Array.isArray(payload.products) && payload.products.length > 0) {
       products = payload.products;
-      if (payload.whatsapp) {
-        WHATSAPP_LOJA = payload.whatsapp;
-      }
       renderStatus("Produtos carregados do Notion.");
       return;
     }
