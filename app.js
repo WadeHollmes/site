@@ -406,7 +406,12 @@ app.get("/api/debug", async (_, res) => {
 app.use(
   express.static(process.cwd(), {
     setHeaders: (res, filePath) => {
-      if (/\.(css|js|woff2?|png|jpe?g|svg|webp|ico)$/i.test(filePath)) {
+      if (/\.(css|js)$/i.test(filePath)) {
+        res.setHeader("Cache-Control", "public, max-age=0, must-revalidate");
+        return;
+      }
+
+      if (/\.(woff2?|png|jpe?g|svg|webp|ico)$/i.test(filePath)) {
         res.setHeader("Cache-Control", "public, max-age=604800, immutable");
       }
     },
