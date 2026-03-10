@@ -189,7 +189,10 @@ async function fetchNotionProducts() {
   const candidateIds = NOTION_DATABASE_ID_CANDIDATES.length
     ? NOTION_DATABASE_ID_CANDIDATES
     : [NOTION_DATABASE_ID];
-  const versionsToTry = [NOTION_VERSION];
+
+  // Na versão 2025-09-03+, o endpoint mudou de /databases/ para /data-sources/
+  const isNewApiVersion = NOTION_VERSION >= "2025-09-03";
+  const endpointBase = isNewApiVersion ? "data-sources" : "databases";
 
   let payload = null;
   let lastError = {
@@ -199,35 +202,28 @@ async function fetchNotionProducts() {
     version: NOTION_VERSION,
   };
 
-  for (const version of versionsToTry) {
-    for (const candidateId of candidateIds) {
-      const databaseUrl = `https://api.notion.com/v1/databases/${candidateId}/query`;
+  for (const candidateId of candidateIds) {
+    const queryUrl = `https://api.notion.com/v1/${endpointBase}/${candidateId}/query`;
 
-      console.log("Tentando Notion API (database):", {
-        url: databaseUrl,
-        databaseIdLength: candidateId.length,
-        version,
-      });
+    console.log("Tentando Notion API:", {
+      url: queryUrl,
+      endpointBase,
+      databaseIdLength: candidateId.length,
+      version: NOTION_VERSION,
+    });
 
-      const databaseAttempt = await queryNotion(databaseUrl, version);
-      if (databaseAttempt.ok) {
-        payload = databaseAttempt.payload;
-        break;
-      }
-
-      lastError = {
-        status: databaseAttempt.status,
-        details: databaseAttempt.details,
-        url: databaseUrl,
-        version,
-      };
-
-      if (!isObjectNotFound(databaseAttempt.status, databaseAttempt.details)) {
-        break;
-      }
+    const attempt = await queryNotion(queryUrl, NOTION_VERSION);
+    if (attempt.ok) {
+      payload = attempt.payload;
+      break;
     }
 
-    if (payload) break;
+    lastError = {
+      status: attempt.status,
+      details: attempt.details,
+      url: queryUrl,
+      version: NOTION_VERSION,
+    };
   }
 
   if (!payload) {
@@ -328,7 +324,7 @@ app.get("/api/test-notion", async (_, res) => {
 
   const [usersMe, search, query] = await Promise.all([
     rawGet(urlUsersMe),
-    rawPost(urlSearch, { filter: { property: "object", value: "database" }, page_size: 5 }),
+    rawPost(urlSearch, { filter: { property: "object", value: "data_source" }, page_size: 5 }),
     rawPost(urlQuery, { page_size: 1 }),
   ]);
 
