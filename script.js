@@ -65,14 +65,55 @@ function normalizeWhatsapp(value) {
   return String(value || "").replace(/\D/g, "");
 }
 
+function showSkeletons(count = 6) {
+  gallery.innerHTML = "";
+  for (let i = 0; i < count; i++) {
+    const card = document.createElement("article");
+    card.className = "card skeleton";
+    const imageDiv = document.createElement("div");
+    imageDiv.className = "image-wrap";
+    const body = document.createElement("div");
+    body.className = "card-body";
+    const line1 = document.createElement("div");
+    line1.className = "skeleton-line";
+    line1.style.cssText = "width:70%;height:16px;margin-bottom:8px";
+    const line2 = document.createElement("div");
+    line2.className = "skeleton-line";
+    line2.style.cssText = "width:90%;height:12px;margin-bottom:8px";
+    const line3 = document.createElement("div");
+    line3.className = "skeleton-line";
+    line3.style.cssText = "width:40%;height:14px";
+    body.append(line1, line2, line3);
+    card.append(imageDiv, body);
+    gallery.appendChild(card);
+  }
+}
+
+function showToast(message) {
+  let toast = document.getElementById("toast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "toast";
+    toast.className = "toast";
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.classList.add("toast-visible");
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => toast.classList.remove("toast-visible"), 2200);
+}
+
 function renderGallery() {
   const fragment = document.createDocumentFragment();
 
-  products.forEach((product) => {
+  products.forEach((product, index) => {
     const node = template.content.cloneNode(true);
     const card = node.querySelector(".card");
     const selectBtn = node.querySelector(".select-btn");
     const image = node.querySelector(".image-wrap");
+
+    card.dataset.productId = product.id;
+    card.style.animationDelay = `${index * 55}ms`;
 
     node.querySelector("h3").textContent = product.name;
     node.querySelector(".description").textContent = product.description;
@@ -152,25 +193,72 @@ function toggleProduct(product, cardElement) {
   if (selected.has(product.id)) {
     selected.delete(product.id);
     cardElement.classList.remove("is-selected");
+    showToast(`${product.name} removido`);
   } else {
-    selected.set(product.id, product);
+    selected.set(product.id, { product, qty: 1 });
     cardElement.classList.add("is-selected");
+    showToast(`${product.name} adicionado`);
   }
 
   updateSummary();
 }
 
+function changeQty(productId, delta) {
+  const entry = selected.get(productId);
+  if (!entry) return;
+  const newQty = entry.qty + delta;
+  if (newQty <= 0) {
+    selected.delete(productId);
+    const card = gallery.querySelector(`[data-product-id="${productId}"]`);
+    if (card) card.classList.remove("is-selected");
+  } else {
+    selected.set(productId, { ...entry, qty: newQty });
+  }
+  updateSummary();
+}
+
 function updateSummary() {
   const items = Array.from(selected.values());
-  const total = items.reduce((sum, item) => sum + item.price, 0);
+  const totalQty = items.reduce((sum, { qty }) => sum + qty, 0);
+  const total = items.reduce((sum, { product, qty }) => sum + product.price * qty, 0);
 
-  selectedCount.textContent = `${items.length} ${items.length === 1 ? "item selecionado" : "itens selecionados"}`;
+  selectedCount.textContent = `${totalQty} ${totalQty === 1 ? "item selecionado" : "itens selecionados"}`;
   selectedTotal.textContent = brl.format(total);
 
   selectedList.innerHTML = "";
-  items.forEach((item) => {
+  items.forEach(({ product, qty }) => {
     const li = document.createElement("li");
-    li.textContent = `${item.name} - ${brl.format(item.price)}`;
+    li.className = "cart-item";
+
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "cart-item-name";
+    nameSpan.textContent = product.name;
+
+    const controls = document.createElement("div");
+    controls.className = "cart-item-controls";
+
+    const minusBtn = document.createElement("button");
+    minusBtn.className = "qty-btn";
+    minusBtn.textContent = "−";
+    minusBtn.type = "button";
+    minusBtn.addEventListener("click", () => changeQty(product.id, -1));
+
+    const qtySpan = document.createElement("span");
+    qtySpan.className = "qty-value";
+    qtySpan.textContent = qty;
+
+    const plusBtn = document.createElement("button");
+    plusBtn.className = "qty-btn";
+    plusBtn.textContent = "+";
+    plusBtn.type = "button";
+    plusBtn.addEventListener("click", () => changeQty(product.id, 1));
+
+    const priceSpan = document.createElement("span");
+    priceSpan.className = "cart-item-price";
+    priceSpan.textContent = brl.format(product.price * qty);
+
+    controls.append(minusBtn, qtySpan, plusBtn, priceSpan);
+    li.append(nameSpan, controls);
     selectedList.appendChild(li);
   });
 
@@ -179,7 +267,7 @@ function updateSummary() {
 
 function buildMessage() {
   const items = Array.from(selected.values());
-  const total = items.reduce((sum, item) => sum + item.price, 0);
+  const total = items.reduce((sum, { product, qty }) => sum + product.price * qty, 0);
   const lines = [];
 
   lines.push("Oi! Quero fazer um pedido:");
@@ -187,8 +275,13 @@ function buildMessage() {
 
   if (items.length > 0) {
     lines.push("Itens:");
-    items.forEach((item, index) => {
-      lines.push(`${index + 1}. ${item.name} - ${brl.format(item.price)}`);
+    items.forEach(({ product, qty }, index) => {
+      const subtotal = product.price * qty;
+      lines.push(
+        qty > 1
+          ? `${index + 1}. ${product.name} x${qty} — ${brl.format(subtotal)}`
+          : `${index + 1}. ${product.name} — ${brl.format(subtotal)}`
+      );
     });
     lines.push("");
   }
@@ -220,6 +313,7 @@ sendButton.addEventListener("click", () => {
 });
 
 async function init() {
+  showSkeletons();
   await loadProducts();
   renderGallery();
   updateSummary();
