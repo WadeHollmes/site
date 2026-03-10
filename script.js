@@ -58,6 +58,7 @@ const sendButton = document.getElementById("send-whatsapp");
 const customerName = document.getElementById("customer-name");
 const notes = document.getElementById("notes");
 const template = document.getElementById("product-card-template");
+const sendButtonDefaultContent = sendButton ? sendButton.innerHTML : "";
 let products = [];
 let WHATSAPP_LOJA = "55119997635107";
 
@@ -95,6 +96,8 @@ function showToast(message) {
     toast = document.createElement("div");
     toast.id = "toast";
     toast.className = "toast";
+    toast.setAttribute("role", "status");
+    toast.setAttribute("aria-live", "polite");
     document.body.appendChild(toast);
   }
   toast.textContent = message;
@@ -157,6 +160,8 @@ function renderStatus(message) {
     statusNode = document.createElement("p");
     statusNode.id = "data-status";
     statusNode.className = "data-status";
+    statusNode.setAttribute("role", "status");
+    statusNode.setAttribute("aria-live", "polite");
     gallery.parentElement.insertBefore(statusNode, gallery);
   }
 
@@ -310,7 +315,7 @@ function buildMessage() {
   return lines.join("\n");
 }
 
-sendButton.addEventListener("click", () => {
+sendButton.addEventListener("click", async () => {
   if (selected.size === 0) {
     alert("Selecione pelo menos um item antes de enviar.");
     return;
@@ -319,7 +324,18 @@ sendButton.addEventListener("click", () => {
   const message = buildMessage();
   const whatsappDestino = normalizeWhatsapp(WHATSAPP_LOJA);
   const url = `https://wa.me/${whatsappDestino}?text=${encodeURIComponent(message)}`;
+
+  sendButton.disabled = true;
+  sendButton.classList.add("is-loading");
+  sendButton.innerHTML = '<span class="spinner" aria-hidden="true"></span> Preparando pedido...';
+
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  showToast("Pedido pronto. Abrindo WhatsApp...");
   window.open(url, "_blank", "noopener,noreferrer");
+
+  sendButton.classList.remove("is-loading");
+  sendButton.innerHTML = sendButtonDefaultContent;
+  updateSummary();
 });
 
 async function init() {

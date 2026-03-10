@@ -263,9 +263,25 @@ async function fetchNotionProducts() {
 }
 
 app.disable("x-powered-by");
-app.use((_, res, next) => {
+app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; connect-src 'self'; img-src 'self' https: data:; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+  );
+
+  if (req.secure || req.headers["x-forwarded-proto"] === "https") {
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
+  }
+
+  next();
+});
+
+app.use("/api", (_, res, next) => {
+  res.setHeader("Cache-Control", "no-store");
   next();
 });
 
@@ -387,7 +403,15 @@ app.get("/api/debug", async (_, res) => {
   });
 });
 
-app.use(express.static(process.cwd()));
+app.use(
+  express.static(process.cwd(), {
+    setHeaders: (res, filePath) => {
+      if (/\.(css|js|woff2?|png|jpe?g|svg|webp|ico)$/i.test(filePath)) {
+        res.setHeader("Cache-Control", "public, max-age=604800, immutable");
+      }
+    },
+  }),
+);
 
 app.get("*", (req, res) => {
   const filePath = path.resolve(process.cwd(), `.${req.path}`);
