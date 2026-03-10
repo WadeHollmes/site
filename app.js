@@ -286,7 +286,9 @@ app.get("/api/products", async (_, res) => {
 app.get("/api/test-notion", async (_, res) => {
   const urlUsersMe = "https://api.notion.com/v1/users/me";
   const urlSearch = "https://api.notion.com/v1/search";
-  const urlQuery = `https://api.notion.com/v1/databases/${NOTION_DATABASE_ID}/query`;
+  const isNewApiVersion = NOTION_VERSION >= "2025-09-03";
+  const endpointBase = isNewApiVersion ? "data-sources" : "databases";
+  const urlQuery = `https://api.notion.com/v1/${endpointBase}/${NOTION_DATABASE_ID}/query`;
 
   async function rawGet(url) {
     try {
@@ -331,6 +333,7 @@ app.get("/api/test-notion", async (_, res) => {
   res.status(200).json({
     notionVersion: NOTION_VERSION,
     databaseId: NOTION_DATABASE_ID,
+    endpointBase,
     usersMe: { url: urlUsersMe, ...usersMe },
     search: { url: urlSearch, ...search },
     query: { url: urlQuery, ...query },
