@@ -1,27 +1,27 @@
 :root {
-  --bg: #4a2418;
-  --surface: #ffa0bf;
-  --surface-soft: #ffc0d5;
-  --ink: #34140c;
-  --muted: #5f261a;
-  --line: #e6739d;
-  --brown: #34140c;
-  --brown-light: #ac6e62;
-  --accent: #8f123a;
-  --accent-strong: #650b29;
+  --bg: #d6b6a6;
+  --surface: #f8a8c3;
+  --surface-soft: #ffd3e1;
+  --ink: #2f150d;
+  --muted: #60382b;
+  --line: #df8cab;
+  --brown: #4c2b1f;
+  --brown-light: #b8897a;
+  --accent: #a41c4d;
+  --accent-strong: #7a1237;
   --radius: 16px;
   --radius-sm: 12px;
   --shadow-card:
-    0 2px 4px rgba(44, 16, 8, 0.06),
-    0 8px 20px rgba(44, 16, 8, 0.14),
-    0 20px 40px rgba(44, 16, 8, 0.08);
+    0 2px 4px rgba(47, 21, 13, 0.05),
+    0 8px 20px rgba(47, 21, 13, 0.12),
+    0 20px 40px rgba(47, 21, 13, 0.07);
   --shadow-soft:
-    0 1px 2px rgba(44, 16, 8, 0.04),
-    0 4px 12px rgba(44, 16, 8, 0.10);
+    0 1px 2px rgba(47, 21, 13, 0.04),
+    0 4px 12px rgba(47, 21, 13, 0.08);
   --shadow-checkout:
-    0 2px 4px rgba(44, 16, 8, 0.05),
-    0 10px 30px rgba(44, 16, 8, 0.14),
-    0 30px 60px rgba(44, 16, 8, 0.06);
+    0 2px 4px rgba(47, 21, 13, 0.05),
+    0 10px 30px rgba(47, 21, 13, 0.12),
+    0 30px 60px rgba(47, 21, 13, 0.06);
 }
 
 * {
@@ -35,9 +35,9 @@ body {
   color: var(--ink);
   font-family: "Instrument Sans", "Segoe UI", sans-serif;
   background:
-    radial-gradient(circle at 10% 10%, #6a3526 0%, transparent 36%),
-    radial-gradient(circle at 90% 8%, #7a1f3a 0%, transparent 30%),
-    linear-gradient(165deg, #4a2418 0%, #3d1b12 100%);
+    radial-gradient(circle at 12% 10%, #e7cfc3 0%, transparent 38%),
+    radial-gradient(circle at 90% 8%, #efbfd0 0%, transparent 30%),
+    linear-gradient(165deg, #d6b6a6 0%, #c9a28f 100%);
 }
 
 body {
@@ -72,12 +72,12 @@ body {
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1;
-  color: #ffe8f0;
+  color: var(--brown);
 }
 
 .topbar p {
   margin: 10px 0 0;
-  color: #ffc8d8;
+  color: var(--muted);
   font-size: clamp(0.95rem, 2vw, 1.08rem);
   line-height: 1.55;
 }
@@ -95,13 +95,13 @@ main {
 
 .data-status {
   margin: 0 0 14px;
-  color: #ffd9e5;
+  color: var(--brown);
   font-weight: 500;
 }
 
 .card {
   position: relative;
-  border: 2px solid var(--line);
+  border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow: hidden;
   background: linear-gradient(180deg, var(--surface) 0%, var(--surface-soft) 100%);
@@ -204,7 +204,7 @@ main {
   align-self: start;
   border: 1px solid var(--line);
   border-radius: 20px;
-  background: #ffd7e5;
+  background: #ffe4ee;
   padding: 18px;
   box-shadow: var(--shadow-checkout);
   max-height: calc(100vh - 50px);
@@ -232,7 +232,7 @@ main {
   border-radius: var(--radius-sm);
   padding: 11px 12px;
   font: inherit;
-  background: #fff2f7;
+  background: #fff8fb;
 }
 
 .checkout input:focus,
@@ -456,9 +456,9 @@ main {
   grid-column: 1 / -1;
   text-align: center;
   font-size: 0.8rem;
-  color: #ffc8d8;
+  color: #6d3f31;
   padding: 16px 0 8px;
-  border-top: 1px solid rgba(255, 182, 206, 0.35);
+  border-top: 1px solid rgba(120, 66, 51, 0.22);
 }
 
 .site-footer p { margin: 0; }
