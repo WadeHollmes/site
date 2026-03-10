@@ -8,15 +8,24 @@ const app = express();
 
 function normalizeNotionDatabaseId(value) {
   const raw = String(value || "").trim();
-  const onlyHex = raw.replace(/[^a-fA-F0-9]/g, "");
-  if (onlyHex.length !== 32) return raw;
-  return `${onlyHex.slice(0, 8)}-${onlyHex.slice(8, 12)}-${onlyHex.slice(12, 16)}-${onlyHex.slice(16, 20)}-${onlyHex.slice(20)}`;
+
+  const uuidLike = raw.match(
+    /[a-fA-F0-9]{8}-?[a-fA-F0-9]{4}-?[a-fA-F0-9]{4}-?[a-fA-F0-9]{4}-?[a-fA-F0-9]{12}/,
+  );
+
+  const compactId = uuidLike
+    ? uuidLike[0].replace(/-/g, "")
+    : (raw.match(/[a-fA-F0-9]{32}/) || [""])[0];
+
+  if (!compactId || compactId.length !== 32) return raw;
+
+  return `${compactId.slice(0, 8)}-${compactId.slice(8, 12)}-${compactId.slice(12, 16)}-${compactId.slice(16, 20)}-${compactId.slice(20)}`;
 }
 
 const PORT = Number(process.env.PORT || 3000);
 const NOTION_API_KEY = process.env.NOTION_API_KEY || "";
 const NOTION_DATABASE_ID = normalizeNotionDatabaseId(process.env.NOTION_DATABASE_ID || "");
-const NOTION_VERSION = (process.env.NOTION_VERSION || "2022-06-28").trim();
+const NOTION_VERSION = (process.env.NOTION_VERSION || "2025-09-03").trim();
 const NOTION_TIMEOUT_MS = Number(process.env.NOTION_TIMEOUT_MS || 10000);
 const PRODUCTS_CACHE_TTL_MS = Number(process.env.PRODUCTS_CACHE_TTL_MS || 60000);
 const WHATSAPP_LOJA = String(process.env.WHATSAPP_LOJA || "55119997635107").replace(/\D/g, "");
@@ -152,7 +161,7 @@ async function fetchNotionProducts() {
 
   const databaseUrl = `https://api.notion.com/v1/databases/${NOTION_DATABASE_ID}/query`;
   const dataSourceUrl = `https://api.notion.com/v1/data-sources/${NOTION_DATABASE_ID}/query`;
-  const versionsToTry = Array.from(new Set([NOTION_VERSION, "2022-06-28"]));
+  const versionsToTry = [NOTION_VERSION];
 
   let payload = null;
   let lastError = {
@@ -271,6 +280,7 @@ app.get("/api/debug", async (_, res) => {
     apiKeyLength: NOTION_API_KEY ? NOTION_API_KEY.length : 0,
     hasDatabaseId,
     databaseIdLength: NOTION_DATABASE_ID ? NOTION_DATABASE_ID.length : 0,
+    databaseIdNormalized: NOTION_DATABASE_ID,
     notionVersion: NOTION_VERSION,
     whatsappConfigured: !!WHATSAPP_LOJA,
     whatsappNumber: WHATSAPP_LOJA,
