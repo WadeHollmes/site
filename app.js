@@ -88,8 +88,11 @@ function mapNotionProduct(page) {
   };
 }
 
-function isInvalidRequestUrl(status, details) {
-  return status === 400 && /invalid_request_url/i.test(String(details || ""));
+function shouldTryDataSourceFallback(status, details) {
+  const text = String(details || "");
+  const invalidUrl = status === 400 && /invalid_request_url/i.test(text);
+  const objectNotFound = status === 404 && /object_not_found/i.test(text);
+  return invalidUrl || objectNotFound;
 }
 
 async function queryNotion(url, notionVersion) {
@@ -179,7 +182,7 @@ async function fetchNotionProducts() {
       version,
     };
 
-    if (isInvalidRequestUrl(databaseAttempt.status, databaseAttempt.details)) {
+    if (shouldTryDataSourceFallback(databaseAttempt.status, databaseAttempt.details)) {
       console.log("Tentando Notion API (data-source fallback):", {
         url: dataSourceUrl,
         databaseIdLength: NOTION_DATABASE_ID.length,
