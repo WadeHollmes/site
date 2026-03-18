@@ -1,9 +1,9 @@
 :root {
-  --bg: #f4f0ee;
+  --bg: #f3eeec;
   --surface: #ffffff;
   --ink: #2f150d;
   --muted: #6a4a3f;
-  --line: #e4d3cc;
+  --line: #e7d9d3;
   --accent: #a41c4d;
   --accent-strong: #7a1237;
   --ok: #1f8a4c;
@@ -20,8 +20,7 @@ body {
   font-family: "Instrument Sans", "Segoe UI", sans-serif;
   color: var(--ink);
   background:
-    radial-gradient(circle at 8% 6%, #e8d4ca 0%, transparent 32%),
-    radial-gradient(circle at 92% 8%, #f4c8d8 0%, transparent 30%),
+    radial-gradient(circle at 8% 6%, #eee1da 0%, transparent 30%),
     var(--bg);
 }
 
@@ -55,7 +54,7 @@ body {
   border-radius: 14px;
   background: var(--surface);
   padding: 14px;
-  box-shadow: 0 6px 18px rgba(47, 21, 13, 0.08);
+  box-shadow: 0 4px 14px rgba(47, 21, 13, 0.06);
 }
 
 .login-card {
@@ -153,7 +152,7 @@ button {
 .stat-card {
   display: grid;
   gap: 6px;
-  background: linear-gradient(155deg, #fff 0%, #fff6fa 100%);
+  background: #fff;
 }
 
 .stat-card small {

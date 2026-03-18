@@ -5,7 +5,7 @@ const fallbackProducts = [
     id: "f-1",
     slug: "agenda-a5",
     name: "Agenda A5",
-    description: "Agenda catolica com opcoes de capa e folhas para planejamento diario.",
+    description: "Agenda católica com opções de capa e folhas para planejamento diário.",
     price: 70,
     image: "linear-gradient(140deg, #f2b5ca, #e89ab6)",
     images: ["linear-gradient(140deg, #f2b5ca, #e89ab6)", "linear-gradient(140deg, #f3cad8, #ecb2c7)"],
@@ -118,7 +118,7 @@ function ProductModal({
       e(
         "button",
         { className: "product-modal__close", type: "button", onClick: onClose, "aria-label": "Fechar detalhes" },
-        "x",
+        "×",
       ),
       e(
         "div",
@@ -163,10 +163,10 @@ function ProductModal({
             "p",
             { className: "product-rating" },
             product.reviewCount > 0
-              ? `Nota ${Number(product.rating || 0).toFixed(1)} (${product.reviewCount} avaliacoes)`
-              : "Sem avaliacoes ainda",
+              ? `Nota ${Number(product.rating || 0).toFixed(1)} (${product.reviewCount} avaliações)`
+              : "Sem avaliações ainda",
           ),
-          e("p", { className: "product-description" }, product.description || "Sem descricao."),
+          e("p", { className: "product-description" }, product.description || "Sem descrição."),
           e(
             "div",
             { className: "product-actions" },
@@ -183,7 +183,7 @@ function ProductModal({
           e(
             "div",
             { className: "product-reviews" },
-            e("h4", null, "Avaliacoes"),
+            e("h4", null, "Avaliações"),
             e(
               "ul",
               { className: "reviews-list" },
@@ -199,7 +199,7 @@ function ProductModal({
                       e("p", null, review.comment || ""),
                     );
                   })
-                : e("li", { className: "review-empty" }, "Ainda nao ha avaliacoes aprovadas."),
+                : e("li", { className: "review-empty" }, "Ainda não há avaliações aprovadas."),
             ),
             e(
               "form",
@@ -228,7 +228,7 @@ function ProductModal({
                 e("option", { value: "2" }, "2"),
                 e("option", { value: "1" }, "1"),
               ),
-              e("label", { htmlFor: "review-comment" }, "Comentario"),
+              e("label", { htmlFor: "review-comment" }, "Comentário"),
               e("textarea", {
                 id: "review-comment",
                 rows: 3,
@@ -240,7 +240,7 @@ function ProductModal({
               e(
                 "button",
                 { className: "review-submit", type: "submit", disabled: reviewSending },
-                reviewSending ? "Enviando..." : "Enviar avaliacao",
+                reviewSending ? "Enviando..." : "Enviar avaliação",
               ),
             ),
           ),
@@ -253,7 +253,7 @@ function ProductModal({
 function App() {
   const [products, setProducts] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
-  const [statusText, setStatusText] = React.useState("Carregando catalogo...");
+  const [statusText, setStatusText] = React.useState("Carregando catálogo...");
   const [toast, setToast] = React.useState("");
   const [cart, setCart] = React.useState({});
   const [customerName, setCustomerName] = React.useState("");
@@ -270,7 +270,7 @@ function App() {
 
     async function loadProducts() {
       setLoading(true);
-      setStatusText("Carregando catalogo...");
+      setStatusText("Carregando catálogo...");
 
       try {
         const response = await fetch("/api/products");
@@ -284,7 +284,7 @@ function App() {
 
         if (!response.ok || !Array.isArray(payload.products) || payload.products.length === 0) {
           setProducts(fallbackProducts.map(normalizeProduct));
-          setStatusText("Usando catalogo local de exemplo.");
+          setStatusText("Usando catálogo local de exemplo.");
           return;
         }
 
@@ -390,7 +390,7 @@ function App() {
     const comment = reviewForm.comment.trim();
 
     if (!authorName || !comment || rating < 1 || rating > 5) {
-      setToast("Preencha os campos da avaliacao.");
+      setToast("Preencha os campos da avaliação.");
       return;
     }
 
@@ -408,13 +408,13 @@ function App() {
       });
 
       if (!response.ok) {
-        throw new Error("Falha ao enviar avaliacao");
+        throw new Error("Falha ao enviar avaliação");
       }
 
       setReviewForm({ name: "", rating: "5", comment: "" });
-      setToast("Avaliacao enviada para aprovacao.");
+      setToast("Avaliação enviada para aprovação.");
     } catch (_) {
-      setToast("Nao foi possivel enviar a avaliacao.");
+      setToast("Não foi possível enviar a avaliação.");
     } finally {
       setReviewSending(false);
     }
@@ -457,7 +457,7 @@ function App() {
         e("h1", null, "Bibi Papelaria"),
         e("p", null, "Escolha seus favoritos e monte seu pedido com praticidade."),
       ),
-      e("a", { className: "admin-link", href: "/admin/", "aria-label": "Abrir painel administrativo" }, "Area admin"),
+      e("a", { className: "admin-link", href: "/admin/", "aria-label": "Abrir painel administrativo" }, "Área admin"),
     ),
 
     e(
@@ -465,9 +465,9 @@ function App() {
       null,
       e(
         "section",
-        { className: "section-head", "aria-label": "Catalogo de produtos" },
+        { className: "section-head", "aria-label": "Catálogo de produtos" },
         e("h2", null, "Nossos produtos"),
-        e("p", null, "Entre nos detalhes para ver galeria completa e avaliacoes."),
+        e("p", null, "Entre nos detalhes para ver galeria completa e avaliações."),
       ),
       e("p", { id: "data-status", className: "data-status", role: "status", "aria-live": "polite" }, statusText),
       e(
@@ -512,11 +512,11 @@ function App() {
         value: customerName,
         onChange: (ev) => setCustomerName(ev.target.value),
       }),
-      e("label", { htmlFor: "notes" }, "Observacoes"),
+      e("label", { htmlFor: "notes" }, "Observações"),
       e("textarea", {
         id: "notes",
         rows: 4,
-        placeholder: "Ex.: Quero entrega para amanha",
+        placeholder: "Ex.: Quero entrega para amanhã",
         value: notes,
         onChange: (ev) => setNotes(ev.target.value),
       }),

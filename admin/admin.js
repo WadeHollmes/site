@@ -118,7 +118,7 @@ function App() {
         rejected: Array.isArray(rejectedJson.reviews) ? rejectedJson.reviews.length : 0,
       });
     } catch (_) {
-      // Mantem estatisticas anteriores em caso de erro de rede.
+      // Mantém estatísticas anteriores em caso de erro de rede.
     }
   }, [adminKey, authHeaders]);
 
@@ -141,13 +141,13 @@ function App() {
           setAdminKey("");
           setAuthenticated(false);
           setReviews([]);
-          setSubtitle("Sessao expirada. Entre novamente.");
+          setSubtitle("Sessão expirada. Entre novamente.");
           return;
         }
 
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
-          throw new Error(payload.error || "Falha ao listar avaliacoes");
+          throw new Error(payload.error || "Falha ao listar avaliações");
         }
 
         const items = Array.isArray(payload.reviews) ? payload.reviews : [];
@@ -181,7 +181,7 @@ function App() {
       });
 
       if (!response.ok) {
-        throw new Error("Chave invalida.");
+        throw new Error("Chave inválida.");
       }
 
       setStoredKey(trimmed);
@@ -192,7 +192,7 @@ function App() {
       setStoredKey("");
       setAdminKey("");
       setAuthenticated(false);
-      setGlobalError(error.message || "Falha de autenticacao.");
+      setGlobalError(error.message || "Falha de autenticação.");
     } finally {
       setIsLoading(false);
     }
@@ -212,7 +212,7 @@ function App() {
 
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
-          throw new Error(payload.error || "Falha ao atualizar avaliacao");
+          throw new Error(payload.error || "Falha ao atualizar avaliação");
         }
 
         await Promise.all([loadReviews(status), loadStats()]);
@@ -241,7 +241,7 @@ function App() {
               body: JSON.stringify({ status: nextStatus }),
             }).then((response) => {
               if (!response.ok) {
-                throw new Error(`Falha ao atualizar avaliacao ${id}`);
+                throw new Error(`Falha ao atualizar avaliação ${id}`);
               }
               return response;
             }),
@@ -250,12 +250,12 @@ function App() {
 
         const failed = results.filter((r) => r.status === "rejected").length;
         if (failed > 0) {
-          setGlobalError(`${failed} item(ns) falharam na operacao em lote.`);
+          setGlobalError(`${failed} item(ns) falharam na operação em lote.`);
         }
 
         await Promise.all([loadReviews(status), loadStats()]);
       } catch (error) {
-        setGlobalError(error.message || "Falha na operacao em lote.");
+        setGlobalError(error.message || "Falha na operação em lote.");
       } finally {
         setBulkBusy(false);
       }
@@ -280,7 +280,7 @@ function App() {
 
       await Promise.all([loadReviews(status), loadStats()]);
     } catch (error) {
-      setGlobalError(error.message || "Falha na sincronizacao.");
+      setGlobalError(error.message || "Falha na sincronização.");
     } finally {
       setIsSyncing(false);
     }
@@ -293,7 +293,7 @@ function App() {
     setReviews([]);
     setStats({ pending: 0, approved: 0, rejected: 0 });
     setGlobalError("");
-    setSubtitle("Sessao encerrada.");
+    setSubtitle("Sessão encerrada.");
   }, []);
 
   React.useEffect(() => {
@@ -341,8 +341,8 @@ function App() {
       e(
         "div",
         null,
-        e("h1", null, "Painel de Aprovacao"),
-        e("p", null, "Gerencie avaliacoes e sincronizacao com Notion."),
+          e("h1", null, "Painel de Aprovação"),
+          e("p", null, "Gerencie avaliações e sincronização com Notion."),
       ),
       isAuthenticated ? e("button", { type: "button", className: "ghost-btn", onClick: logout }, "Sair") : null,
     ),
@@ -352,7 +352,7 @@ function App() {
           "section",
           { className: "card login-card" },
           e("h2", null, "Acesso Admin"),
-          e("p", null, "Digite a chave de administracao para abrir o painel."),
+          e("p", null, "Digite a chave de administração para abrir o painel."),
           e(
             "form",
             { className: "stack", onSubmit: onSubmitLogin },
@@ -383,8 +383,8 @@ function App() {
           e(
             "section",
             { className: "card chart-card" },
-            e("h3", null, "Distribuicao de status"),
-            e("p", { className: "muted" }, `${totalReviews} avaliacao(oes) registradas.`),
+            e("h3", null, "Distribuição de status"),
+            e("p", { className: "muted" }, `${totalReviews} avaliação(ões) registradas.`),
             e(
               "ul",
               { className: "chart-list" },
@@ -466,7 +466,7 @@ function App() {
               e("input", {
                 id: "review-search",
                 type: "search",
-                placeholder: "Produto, autor ou comentario",
+                  placeholder: "Produto, autor ou comentário",
                 value: query,
                 onChange: (ev) => setQuery(ev.target.value),
               }),
@@ -474,7 +474,7 @@ function App() {
             e(
               "div",
               { className: "filter-field" },
-              e("label", { htmlFor: "rating-min" }, "Nota minima"),
+                e("label", { htmlFor: "rating-min" }, "Nota mínima"),
               e(
                 "select",
                 {
@@ -502,7 +502,7 @@ function App() {
                       disabled: bulkBusy || idsInView.length === 0,
                       onClick: () => bulkModerate("approved", idsInView),
                     },
-                    bulkBusy ? "Processando..." : "Aprovar visiveis",
+                    bulkBusy ? "Processando..." : "Aprovar visíveis",
                   ),
                   e(
                     "button",
@@ -512,7 +512,7 @@ function App() {
                       disabled: bulkBusy || idsInView.length === 0,
                       onClick: () => bulkModerate("rejected", idsInView),
                     },
-                    bulkBusy ? "Processando..." : "Rejeitar visiveis",
+                    bulkBusy ? "Processando..." : "Rejeitar visíveis",
                   ),
                 )
               : null,
@@ -521,14 +521,14 @@ function App() {
           e(
             "section",
             { className: "card list-card" },
-            e("h3", null, `Avaliacoes ${statusLabel(status)}`),
-            e("p", { className: "muted" }, `${subtitle} Exibindo ${filteredReviews.length} item(ns) apos filtro.`),
+            e("h3", null, `Avaliações ${statusLabel(status)}`),
+            e("p", { className: "muted" }, `${subtitle} Exibindo ${filteredReviews.length} item(ns) após filtro.`),
             globalError ? e("p", { className: "status-error", role: "alert" }, globalError) : null,
             e(
               "ul",
               { className: "reviews-list" },
               filteredReviews.length === 0
-                ? e("li", { className: "empty-state" }, `Nao ha avaliacoes ${statusLabel(status)} para os filtros atuais.`)
+                ? e("li", { className: "empty-state" }, `Não há avaliações ${statusLabel(status)} para os filtros atuais.`)
                 : filteredReviews.map((item) =>
                     e(ReviewItem, {
                       key: item.id,
