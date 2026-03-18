@@ -4,49 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Painel Admin | Bibi Papelaria</title>
-    <link rel="stylesheet" href="../admin/admin.css?v=1.0" />
+    <link rel="stylesheet" href="../admin/admin.css?v=3.0" />
   </head>
   <body>
-    <main class="admin-shell">
-      <header class="admin-header">
-        <div>
-          <h1>Painel de Aprovação</h1>
-          <p>Gerencie avaliações e sincronização com Notion.</p>
-        </div>
-        <button id="logout-btn" class="ghost-btn" type="button">Sair</button>
-      </header>
+    <div id="admin-root"></div>
 
-      <section id="login-card" class="card login-card">
-        <h2>Acesso Admin</h2>
-        <p>Digite a chave de administração para abrir o painel.</p>
-        <form id="login-form" class="stack">
-          <label for="admin-key">Senha / Chave</label>
-          <input id="admin-key" type="password" placeholder="ADMIN_REVIEW_KEY" required />
-          <button class="primary-btn" type="submit">Entrar</button>
-        </form>
-      </section>
-
-      <section id="dashboard" class="dashboard hidden">
-        <div class="toolbar card">
-          <div class="toolbar-left">
-            <button class="tab-btn is-active" data-status="pending" type="button">Pendentes</button>
-            <button class="tab-btn" data-status="approved" type="button">Aprovadas</button>
-            <button class="tab-btn" data-status="rejected" type="button">Rejeitadas</button>
-          </div>
-          <div class="toolbar-right">
-            <button id="sync-btn" class="primary-btn" type="button">Sincronizar Notion</button>
-            <button id="refresh-btn" class="ghost-btn" type="button">Atualizar lista</button>
-          </div>
-        </div>
-
-        <section class="card list-card">
-          <h3 id="list-title">Avaliações pendentes</h3>
-          <p id="list-subtitle" class="muted">Carregando...</p>
-          <ul id="reviews-list" class="reviews-list"></ul>
-        </section>
-      </section>
-    </main>
-
-    <script src="../admin/admin.js?v=1.0"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="../admin/admin.js?v=3.0"></script>
   </body>
 </html>

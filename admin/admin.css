@@ -144,6 +144,112 @@ button {
   flex-wrap: wrap;
 }
 
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.stat-card {
+  display: grid;
+  gap: 6px;
+  background: linear-gradient(155deg, #fff 0%, #fff6fa 100%);
+}
+
+.stat-card small {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.stat-card strong {
+  font-size: 1.8rem;
+  line-height: 1;
+  color: var(--accent-strong);
+}
+
+.chart-card h3 {
+  margin: 0;
+}
+
+.chart-card .muted {
+  margin: 6px 0 0;
+}
+
+.chart-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.chart-item {
+  display: grid;
+  gap: 6px;
+}
+
+.chart-item__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+.chart-track {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: #f3e5eb;
+  overflow: hidden;
+}
+
+.chart-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 0.25s ease;
+}
+
+.chart-fill.pending {
+  background: linear-gradient(90deg, #d77da5, #c25c91);
+}
+
+.chart-fill.approved {
+  background: linear-gradient(90deg, #42a76c, #2f9058);
+}
+
+.chart-fill.rejected {
+  background: linear-gradient(90deg, #d25565, #b63b4f);
+}
+
+.filters-row {
+  display: grid;
+  grid-template-columns: 1fr 180px auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.filter-field {
+  display: grid;
+  gap: 6px;
+}
+
+.filter-field select {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fffafc;
+  color: var(--ink);
+  padding: 10px;
+  font: inherit;
+}
+
+.bulk-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .tab-btn {
   border: 1px solid var(--line);
   background: #fff;
@@ -229,9 +335,20 @@ button {
   border-radius: 12px;
 }
 
+.status-error {
+  margin: 6px 0 0;
+  color: var(--danger);
+  font-weight: 600;
+}
+
 @media (max-width: 640px) {
   .admin-shell {
     width: calc(100% - 14px);
     margin: 10px auto;
+  }
+
+  .stats-grid,
+  .filters-row {
+    grid-template-columns: 1fr;
   }
 }

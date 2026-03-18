@@ -520,7 +520,7 @@ app.use((req, res, next) => {
   res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
   res.setHeader(
     "Content-Security-Policy",
-    "default-src 'self'; connect-src 'self'; img-src 'self' https: data:; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+    "default-src 'self'; connect-src 'self'; img-src 'self' https: data:; script-src 'self' https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
   );
 
   if (req.secure || req.headers["x-forwarded-proto"] === "https") {

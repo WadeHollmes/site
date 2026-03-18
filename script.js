@@ -1,3 +1,5 @@
+/* global React, ReactDOM */
+
 const fallbackProducts = [
   {
     id: "f-1",
@@ -25,501 +27,654 @@ const fallbackProducts = [
   },
 ];
 
-const brl = new Intl.NumberFormat("pt-BR", {
-  style: "currency",
-  currency: "BRL",
-});
-
-const selected = new Map();
-let products = [];
-let currentProduct = null;
-let WHATSAPP_LOJA = "55119997635107";
-
-const gallery = document.getElementById("gallery");
-const selectedCount = document.getElementById("selected-count");
-const selectedTotal = document.getElementById("selected-total");
-const selectedList = document.getElementById("selected-list");
-const sendButton = document.getElementById("send-whatsapp");
-const customerName = document.getElementById("customer-name");
-const notes = document.getElementById("notes");
-const template = document.getElementById("product-card-template");
-const sendButtonDefaultContent = sendButton ? sendButton.innerHTML : "";
-
-const modal = document.getElementById("product-modal");
-const modalClose = document.getElementById("product-modal-close");
-const productMainImage = document.getElementById("product-main-image");
-const productThumbs = document.getElementById("product-thumbs");
-const productTitle = document.getElementById("product-title");
-const productPrice = document.getElementById("product-price");
-const productRating = document.getElementById("product-rating");
-const productDescription = document.getElementById("product-description");
-const productAddButton = document.getElementById("product-add");
-const productReviewsList = document.getElementById("product-reviews-list");
-const reviewForm = document.getElementById("review-form");
+const e = React.createElement;
+const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
 function normalizeWhatsapp(value) {
   return String(value || "").replace(/\D/g, "");
 }
 
-function showSkeletons(count = 6) {
-  gallery.innerHTML = "";
-  for (let i = 0; i < count; i++) {
-    const card = document.createElement("article");
-    card.className = "card skeleton";
-    const imageDiv = document.createElement("div");
-    imageDiv.className = "image-wrap";
-    const body = document.createElement("div");
-    body.className = "card-body";
-    const line1 = document.createElement("div");
-    line1.className = "skeleton-line";
-    line1.style.cssText = "width:70%;height:16px;margin-bottom:8px";
-    const line2 = document.createElement("div");
-    line2.className = "skeleton-line";
-    line2.style.cssText = "width:55%;height:14px";
-    body.append(line1, line2);
-    card.append(imageDiv, body);
-    gallery.appendChild(card);
-  }
+function normalizeProduct(raw) {
+  const images = Array.isArray(raw.images)
+    ? raw.images.filter(Boolean)
+    : [raw.image].filter(Boolean);
+
+  return {
+    ...raw,
+    images,
+    image: raw.image || images[0] || "",
+    reviews: Array.isArray(raw.reviews) ? raw.reviews : [],
+    rating: Number(raw.rating || 0),
+    reviewCount: Number(raw.reviewCount || 0),
+    price: Number(raw.price || 0),
+  };
 }
 
-function showToast(message) {
-  let toast = document.getElementById("toast");
-  if (!toast) {
-    toast = document.createElement("div");
-    toast.id = "toast";
-    toast.className = "toast";
-    toast.setAttribute("role", "status");
-    toast.setAttribute("aria-live", "polite");
-    document.body.appendChild(toast);
-  }
-  toast.textContent = message;
-  toast.classList.add("toast-visible");
-  clearTimeout(toast._timer);
-  toast._timer = setTimeout(() => toast.classList.remove("toast-visible"), 2200);
+function ProductCard({ product, selectedQty, onOpen, index }) {
+  const hasRemoteImage = /^https?:\/\//i.test(product.image || "");
+  const imagesCount = product.images?.length || 0;
+
+  return e(
+    "article",
+    {
+      className: `card card-clickable${selectedQty > 0 ? " is-selected" : ""}`,
+      style: { "--card-delay": `${index * 45}ms` },
+      tabIndex: 0,
+      role: "button",
+      onClick: () => onOpen(product),
+      onKeyDown: (ev) => {
+        if (ev.key === "Enter" || ev.key === " ") {
+          ev.preventDefault();
+          onOpen(product);
+        }
+      },
+      "aria-label": `Abrir detalhes de ${product.name}`,
+    },
+    selectedQty > 0
+      ? e("span", { className: "selected-chip" }, `${selectedQty} no carrinho`)
+      : null,
+    e(
+      "div",
+      {
+        className: "image-wrap img-loaded",
+        style: hasRemoteImage ? undefined : { background: product.image || "linear-gradient(145deg, #f5aabf, #e88aa5)" },
+      },
+      hasRemoteImage ? e("img", { src: product.image, alt: product.name, loading: "lazy" }) : null,
+    ),
+    e(
+      "div",
+      { className: "card-body" },
+      e("h3", null, product.name),
+      imagesCount > 1 ? e("span", { className: "media-count" }, `${imagesCount} fotos`) : null,
+      e("span", { className: "card-hint" }, "Clique no card para abrir o produto"),
+      e("span", { className: "price" }, brl.format(product.price)),
+    ),
+  );
 }
 
-function renderStatus(message) {
-  let statusNode = document.getElementById("data-status");
+function ProductModal({
+  product,
+  activeImage,
+  onImageSelect,
+  onClose,
+  onAdd,
+  reviewForm,
+  onReviewForm,
+  onReviewSubmit,
+  reviewSending,
+}) {
+  if (!product) return null;
 
-  if (!statusNode) {
-    statusNode = document.createElement("p");
-    statusNode.id = "data-status";
-    statusNode.className = "data-status";
-    statusNode.setAttribute("role", "status");
-    statusNode.setAttribute("aria-live", "polite");
-    gallery.parentElement.insertBefore(statusNode, gallery);
-  }
+  const images = product.images?.length ? product.images : ["linear-gradient(140deg, #f2b5ca, #e89ab6)"];
+  const mainImage = activeImage || images[0];
+  const hasMainRemote = /^https?:\/\//i.test(mainImage || "");
 
-  statusNode.textContent = message;
+  return e(
+    "div",
+    { className: "product-modal is-open", role: "dialog", "aria-modal": "true", "aria-hidden": "false" },
+    e("div", { className: "product-modal__backdrop", onClick: onClose }),
+    e(
+      "article",
+      { className: "product-modal__content" },
+      e(
+        "button",
+        { className: "product-modal__close", type: "button", onClick: onClose, "aria-label": "Fechar detalhes" },
+        "x",
+      ),
+      e(
+        "div",
+        { className: "product-modal__grid" },
+        e(
+          "section",
+          { className: "product-gallery" },
+          e(
+            "div",
+            {
+              className: "product-gallery__main",
+              style: hasMainRemote ? undefined : { background: mainImage },
+            },
+            hasMainRemote ? e("img", { src: mainImage, alt: product.name, loading: "lazy" }) : null,
+          ),
+          e(
+            "div",
+            { className: "product-gallery__thumbs" },
+            images.map((src, idx) => {
+              const isRemote = /^https?:\/\//i.test(src || "");
+              const active = src === mainImage;
+              return e(
+                "button",
+                {
+                  key: `${product.id}-thumb-${idx}`,
+                  className: `thumb-btn${active ? " is-active" : ""}`,
+                  type: "button",
+                  onClick: () => onImageSelect(src),
+                  style: isRemote ? undefined : { background: src },
+                },
+                isRemote ? e("img", { src, alt: "Miniatura", loading: "lazy" }) : null,
+              );
+            }),
+          ),
+        ),
+        e(
+          "section",
+          { className: "product-info" },
+          e("h3", null, product.name),
+          e("p", { className: "product-price" }, brl.format(product.price || 0)),
+          e(
+            "p",
+            { className: "product-rating" },
+            product.reviewCount > 0
+              ? `Nota ${Number(product.rating || 0).toFixed(1)} (${product.reviewCount} avaliacoes)`
+              : "Sem avaliacoes ainda",
+          ),
+          e("p", { className: "product-description" }, product.description || "Sem descricao."),
+          e(
+            "div",
+            { className: "product-actions" },
+            e(
+              "button",
+              { className: "whatsapp-btn", type: "button", onClick: () => onAdd(product) },
+              "Adicionar ao pedido",
+            ),
+          ),
+          e(
+            "div",
+            { className: "product-reviews" },
+            e("h4", null, "Avaliacoes"),
+            e(
+              "ul",
+              { className: "reviews-list" },
+              product.reviews?.length
+                ? product.reviews.map((review, idx) => {
+                    const safeRating = Math.max(1, Math.min(5, Number(review.rating) || 0));
+                    const stars = "★".repeat(safeRating) + "☆".repeat(5 - safeRating);
+                    return e(
+                      "li",
+                      { className: "review-item", key: `${product.id}-review-${idx}` },
+                      e("strong", null, review.authorName || "Cliente"),
+                      e("span", null, ` ${stars}`),
+                      e("p", null, review.comment || ""),
+                    );
+                  })
+                : e("li", { className: "review-empty" }, "Ainda nao ha avaliacoes aprovadas."),
+            ),
+            e(
+              "form",
+              { className: "review-form", onSubmit: onReviewSubmit },
+              e("label", { htmlFor: "review-name" }, "Seu nome"),
+              e("input", {
+                id: "review-name",
+                type: "text",
+                maxLength: 80,
+                value: reviewForm.name,
+                onChange: (ev) => onReviewForm("name", ev.target.value),
+                required: true,
+              }),
+              e("label", { htmlFor: "review-rating" }, "Nota (1 a 5)"),
+              e(
+                "select",
+                {
+                  id: "review-rating",
+                  value: reviewForm.rating,
+                  onChange: (ev) => onReviewForm("rating", ev.target.value),
+                  required: true,
+                },
+                e("option", { value: "5" }, "5"),
+                e("option", { value: "4" }, "4"),
+                e("option", { value: "3" }, "3"),
+                e("option", { value: "2" }, "2"),
+                e("option", { value: "1" }, "1"),
+              ),
+              e("label", { htmlFor: "review-comment" }, "Comentario"),
+              e("textarea", {
+                id: "review-comment",
+                rows: 3,
+                maxLength: 400,
+                value: reviewForm.comment,
+                onChange: (ev) => onReviewForm("comment", ev.target.value),
+                required: true,
+              }),
+              e(
+                "button",
+                { className: "review-submit", type: "submit", disabled: reviewSending },
+                reviewSending ? "Enviando..." : "Enviar avaliacao",
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
-function renderGallery() {
-  const fragment = document.createDocumentFragment();
+function App() {
+  const [products, setProducts] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [statusText, setStatusText] = React.useState("Carregando catalogo...");
+  const [toast, setToast] = React.useState("");
+  const [search, setSearch] = React.useState("");
+  const [sortBy, setSortBy] = React.useState("featured");
+  const [minPrice, setMinPrice] = React.useState("");
+  const [maxPrice, setMaxPrice] = React.useState("");
+  const [cart, setCart] = React.useState({});
+  const [customerName, setCustomerName] = React.useState("");
+  const [notes, setNotes] = React.useState("");
+  const [whatsapp, setWhatsapp] = React.useState("55119997635107");
+  const [modalProduct, setModalProduct] = React.useState(null);
+  const [activeImage, setActiveImage] = React.useState("");
+  const [reviewSending, setReviewSending] = React.useState(false);
+  const [reviewForm, setReviewForm] = React.useState({ name: "", rating: "5", comment: "" });
+  const [sendingOrder, setSendingOrder] = React.useState(false);
 
-  products.forEach((product, index) => {
-    const node = template.content.cloneNode(true);
-    const card = node.querySelector(".card");
-    const selectBtn = node.querySelector(".select-btn");
-    const image = node.querySelector(".image-wrap");
-    const viewBtn = node.querySelector(".view-btn");
+  React.useEffect(() => {
+    let alive = true;
 
-    card.dataset.productId = product.id;
-    card.style.animationDelay = `${index * 55}ms`;
+    async function loadProducts() {
+      setLoading(true);
+      setStatusText("Carregando catalogo...");
 
-    node.querySelector("h3").textContent = product.name;
-    const imagesCount = Array.isArray(product.images) ? product.images.length : 0;
-    if (imagesCount > 1) {
-      const photosBadge = document.createElement("span");
-      photosBadge.className = "media-count";
-      photosBadge.textContent = `${imagesCount} fotos`;
-      node.querySelector(".card-body").insertBefore(photosBadge, viewBtn);
+      try {
+        const response = await fetch("/api/products");
+        const payload = await response.json().catch(() => ({}));
+
+        if (!alive) return;
+
+        if (payload.whatsapp) {
+          setWhatsapp(normalizeWhatsapp(payload.whatsapp) || "55119997635107");
+        }
+
+        if (!response.ok || !Array.isArray(payload.products) || payload.products.length === 0) {
+          setProducts(fallbackProducts.map(normalizeProduct));
+          setStatusText("Usando catalogo local de exemplo.");
+          return;
+        }
+
+        setProducts(payload.products.map(normalizeProduct));
+        setStatusText("Nossos produtos");
+      } catch (_) {
+        if (!alive) return;
+        setProducts(fallbackProducts.map(normalizeProduct));
+        setStatusText("Erro ao carregar API. Exibindo produtos locais de exemplo.");
+      } finally {
+        if (alive) setLoading(false);
+      }
     }
-    node.querySelector(".price").textContent = brl.format(product.price);
 
-    const previewImage = product.image || (product.images || [])[0];
-    if (previewImage && /^https?:\/\//i.test(previewImage)) {
-      const img = document.createElement("img");
-      img.alt = product.name;
-      img.decoding = "async";
-      if (index < 4) img.fetchPriority = "high";
-      img.addEventListener("load", () => {
-        img.classList.add("img-ready");
-        image.classList.add("img-loaded");
-      });
-      img.addEventListener("error", () => {
-        image.classList.add("img-loaded");
-        image.style.background = "linear-gradient(145deg, #f5aabf, #e88aa5)";
-      });
-      img.src = previewImage;
-      image.appendChild(img);
-    } else {
-      image.classList.add("img-loaded");
-      image.style.background = previewImage || "linear-gradient(145deg, #f5aabf, #e88aa5)";
+    loadProducts();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (!toast) return undefined;
+    const timer = setTimeout(() => setToast(""), 2200);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  const selectedItems = React.useMemo(() => Object.values(cart), [cart]);
+  const totalQty = React.useMemo(
+    () => selectedItems.reduce((sum, item) => sum + item.qty, 0),
+    [selectedItems],
+  );
+  const totalValue = React.useMemo(
+    () => selectedItems.reduce((sum, item) => sum + item.product.price * item.qty, 0),
+    [selectedItems],
+  );
+
+  const filteredProducts = React.useMemo(() => {
+    const term = search.trim().toLowerCase();
+    const min = minPrice === "" ? Number.NEGATIVE_INFINITY : Number(minPrice);
+    const max = maxPrice === "" ? Number.POSITIVE_INFINITY : Number(maxPrice);
+
+    if (Number.isNaN(min) || Number.isNaN(max)) {
+      return [];
     }
 
-    selectBtn.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      toggleProduct(product, card);
+    const base = products.filter((p) => {
+      if (!term) return true;
+      return (
+        String(p.name || "").toLowerCase().includes(term) ||
+        String(p.description || "").toLowerCase().includes(term)
+      );
+    }).filter((p) => Number(p.price || 0) >= min && Number(p.price || 0) <= max);
+
+    return [...base].sort((a, b) => {
+      if (sortBy === "price-asc") return a.price - b.price;
+      if (sortBy === "price-desc") return b.price - a.price;
+      if (sortBy === "rating") return (b.rating || 0) - (a.rating || 0);
+      return String(a.name || "").localeCompare(String(b.name || ""), "pt-BR");
     });
+  }, [products, search, sortBy, minPrice, maxPrice]);
 
-    viewBtn.addEventListener("click", () => {
-      openProductModal(product);
-    });
+  const openProduct = async (product) => {
+    let fullProduct = product;
 
-    card.addEventListener("dblclick", () => {
-      openProductModal(product);
-    });
-
-    fragment.appendChild(node);
-  });
-
-  gallery.innerHTML = "";
-  gallery.appendChild(fragment);
-}
-
-async function loadProducts() {
-  try {
-    const response = await fetch("/api/products");
-    const payload = await response.json().catch(() => ({}));
-
-    if (payload.whatsapp) {
-      WHATSAPP_LOJA = normalizeWhatsapp(payload.whatsapp) || WHATSAPP_LOJA;
+    if (product.slug && !String(product.id || "").startsWith("f-")) {
+      try {
+        const response = await fetch(`/api/products/${encodeURIComponent(product.slug)}`);
+        const payload = await response.json().catch(() => ({}));
+        if (response.ok && payload.product) {
+          fullProduct = normalizeProduct({ ...product, ...payload.product });
+        }
+      } catch (_) {
+        // Mantem produto resumido em caso de falha de rede.
+      }
     }
 
-    if (!response.ok || !Array.isArray(payload.products) || payload.products.length === 0) {
-      products = [...fallbackProducts];
-      renderStatus("Usando catalogo local de exemplo.");
+    setModalProduct(fullProduct);
+    setActiveImage((fullProduct.images || [])[0] || "");
+  };
+
+  const addToCart = (product) => {
+    setCart((prev) => {
+      const existing = prev[product.id];
+      const nextQty = existing ? existing.qty + 1 : 1;
+      return {
+        ...prev,
+        [product.id]: {
+          product,
+          qty: nextQty,
+        },
+      };
+    });
+    setToast(`${product.name} adicionado ao pedido`);
+  };
+
+  const changeQty = (productId, delta) => {
+    setCart((prev) => {
+      const current = prev[productId];
+      if (!current) return prev;
+
+      const newQty = current.qty + delta;
+      if (newQty <= 0) {
+        const next = { ...prev };
+        delete next[productId];
+        return next;
+      }
+
+      return {
+        ...prev,
+        [productId]: {
+          ...current,
+          qty: newQty,
+        },
+      };
+    });
+  };
+
+  const onReviewForm = (field, value) => {
+    setReviewForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const submitReview = async (ev) => {
+    ev.preventDefault();
+    if (!modalProduct) return;
+
+    const authorName = reviewForm.name.trim();
+    const rating = Number(reviewForm.rating || 0);
+    const comment = reviewForm.comment.trim();
+
+    if (!authorName || !comment || rating < 1 || rating > 5) {
+      setToast("Preencha os campos da avaliacao.");
       return;
     }
 
-    products = payload.products.map((p) => ({
-      ...p,
-      images: Array.isArray(p.images) ? p.images : [p.image].filter(Boolean),
-      reviews: Array.isArray(p.reviews) ? p.reviews : [],
-    }));
-    renderStatus("Nossos produtos");
-  } catch (error) {
-    console.error("Erro ao carregar produtos:", error);
-    products = [...fallbackProducts];
-    renderStatus("Erro ao carregar API. Exibindo produtos locais de exemplo.");
-  }
-}
-
-async function openProductModal(product) {
-  let fullProduct = product;
-
-  if (product.slug && !String(product.id || "").startsWith("f-")) {
+    setReviewSending(true);
     try {
-      const response = await fetch(`/api/products/${encodeURIComponent(product.slug)}`);
-      const payload = await response.json().catch(() => ({}));
-      if (response.ok && payload.product) {
-        fullProduct = payload.product;
-      }
-    } catch (error) {
-      console.error("Erro ao carregar detalhe do produto:", error);
-    }
-  }
+      const response = await fetch("/api/reviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productId: modalProduct.id,
+          authorName,
+          rating,
+          comment,
+        }),
+      });
 
-  currentProduct = {
-    ...product,
-    ...fullProduct,
-    images: Array.isArray(fullProduct.images) ? fullProduct.images : [fullProduct.image].filter(Boolean),
+      if (!response.ok) {
+        throw new Error("Falha ao enviar avaliacao");
+      }
+
+      setReviewForm({ name: "", rating: "5", comment: "" });
+      setToast("Avaliacao enviada para aprovacao.");
+    } catch (_) {
+      setToast("Nao foi possivel enviar a avaliacao.");
+    } finally {
+      setReviewSending(false);
+    }
   };
 
-  productTitle.textContent = currentProduct.name;
-  productPrice.textContent = brl.format(currentProduct.price || 0);
-  const rating = Number(currentProduct.rating || 0);
-  const reviewCount = Number(currentProduct.reviewCount || 0);
-  productRating.textContent = reviewCount > 0 ? `Nota ${rating.toFixed(1)} (${reviewCount} avaliacoes)` : "Sem avaliacoes ainda";
-  productDescription.textContent = currentProduct.description || "Sem descricao.";
+  const sendWhatsapp = async () => {
+    if (!selectedItems.length) return;
 
-  renderProductGallery(currentProduct.images || []);
-  renderReviews(currentProduct.reviews || []);
-
-  modal.classList.add("is-open");
-  modal.setAttribute("aria-hidden", "false");
-}
-
-function closeProductModal() {
-  modal.classList.remove("is-open");
-  modal.setAttribute("aria-hidden", "true");
-}
-
-function renderProductGallery(images) {
-  const safeImages = images.length ? images : ["linear-gradient(140deg, #f2b5ca, #e89ab6)"];
-
-  function setMainImage(src) {
-    productMainImage.innerHTML = "";
-    if (/^https?:\/\//i.test(src)) {
-      const img = document.createElement("img");
-      img.src = src;
-      img.alt = currentProduct?.name || "Produto";
-      img.loading = "lazy";
-      productMainImage.appendChild(img);
-    } else {
-      const div = document.createElement("div");
-      div.style.width = "100%";
-      div.style.height = "100%";
-      div.style.background = src;
-      productMainImage.appendChild(div);
-    }
-  }
-
-  setMainImage(safeImages[0]);
-  productThumbs.innerHTML = "";
-
-  safeImages.forEach((src, idx) => {
-    const thumb = document.createElement("button");
-    thumb.type = "button";
-    thumb.className = `thumb-btn${idx === 0 ? " is-active" : ""}`;
-
-    if (/^https?:\/\//i.test(src)) {
-      const img = document.createElement("img");
-      img.src = src;
-      img.alt = "Miniatura";
-      thumb.appendChild(img);
-    } else {
-      thumb.style.background = src;
-    }
-
-    thumb.addEventListener("click", () => {
-      productThumbs.querySelectorAll(".thumb-btn").forEach((b) => b.classList.remove("is-active"));
-      thumb.classList.add("is-active");
-      setMainImage(src);
-    });
-
-    productThumbs.appendChild(thumb);
-  });
-}
-
-function renderReviews(reviews) {
-  productReviewsList.innerHTML = "";
-
-  if (!reviews.length) {
-    const li = document.createElement("li");
-    li.className = "review-empty";
-    li.textContent = "Ainda nao ha avaliacoes aprovadas.";
-    productReviewsList.appendChild(li);
-    return;
-  }
-
-  reviews.forEach((review) => {
-    const li = document.createElement("li");
-    li.className = "review-item";
-
-    const safeRating = Math.max(1, Math.min(5, Number(review.rating) || 0));
-    const stars = "★".repeat(safeRating) + "☆".repeat(5 - safeRating);
-
-    const author = document.createElement("strong");
-    author.textContent = review.authorName || "Cliente";
-
-    const ratingSpan = document.createElement("span");
-    ratingSpan.textContent = ` ${stars}`;
-
-    const comment = document.createElement("p");
-    comment.textContent = review.comment || "";
-
-    li.append(author, ratingSpan, comment);
-    productReviewsList.appendChild(li);
-  });
-}
-
-function toggleProduct(product, cardElement) {
-  if (selected.has(product.id)) {
-    selected.delete(product.id);
-    cardElement?.classList.remove("is-selected");
-    showToast(`${product.name} removido`);
-  } else {
-    selected.set(product.id, { product, qty: 1 });
-    cardElement?.classList.add("is-selected");
-    showToast(`${product.name} adicionado`);
-  }
-
-  updateSummary();
-}
-
-function addFromModal() {
-  if (!currentProduct) return;
-
-  if (selected.has(currentProduct.id)) {
-    const entry = selected.get(currentProduct.id);
-    selected.set(currentProduct.id, { ...entry, qty: entry.qty + 1 });
-  } else {
-    selected.set(currentProduct.id, { product: currentProduct, qty: 1 });
-  }
-
-  const card = gallery.querySelector(`[data-product-id="${currentProduct.id}"]`);
-  if (card) card.classList.add("is-selected");
-
-  updateSummary();
-  showToast(`${currentProduct.name} adicionado ao pedido`);
-}
-
-function changeQty(productId, delta) {
-  const entry = selected.get(productId);
-  if (!entry) return;
-  const newQty = entry.qty + delta;
-  if (newQty <= 0) {
-    selected.delete(productId);
-    const card = gallery.querySelector(`[data-product-id="${productId}"]`);
-    if (card) card.classList.remove("is-selected");
-  } else {
-    selected.set(productId, { ...entry, qty: newQty });
-  }
-  updateSummary();
-}
-
-function updateSummary() {
-  const items = Array.from(selected.values());
-  const totalQty = items.reduce((sum, { qty }) => sum + qty, 0);
-  const total = items.reduce((sum, { product, qty }) => sum + product.price * qty, 0);
-
-  selectedCount.textContent = `${totalQty} ${totalQty === 1 ? "item selecionado" : "itens selecionados"}`;
-  selectedTotal.textContent = brl.format(total);
-
-  selectedList.innerHTML = "";
-  items.forEach(({ product, qty }) => {
-    const li = document.createElement("li");
-    li.className = "cart-item";
-
-    const nameSpan = document.createElement("span");
-    nameSpan.className = "cart-item-name";
-    nameSpan.textContent = product.name;
-
-    const controls = document.createElement("div");
-    controls.className = "cart-item-controls";
-
-    const minusBtn = document.createElement("button");
-    minusBtn.className = "qty-btn";
-    minusBtn.textContent = "-";
-    minusBtn.type = "button";
-    minusBtn.addEventListener("click", () => changeQty(product.id, -1));
-
-    const qtySpan = document.createElement("span");
-    qtySpan.className = "qty-value";
-    qtySpan.textContent = qty;
-
-    const plusBtn = document.createElement("button");
-    plusBtn.className = "qty-btn";
-    plusBtn.textContent = "+";
-    plusBtn.type = "button";
-    plusBtn.addEventListener("click", () => changeQty(product.id, 1));
-
-    const priceSpan = document.createElement("span");
-    priceSpan.className = "cart-item-price";
-    priceSpan.textContent = brl.format(product.price * qty);
-
-    controls.append(minusBtn, qtySpan, plusBtn, priceSpan);
-    li.append(nameSpan, controls);
-    selectedList.appendChild(li);
-  });
-
-  sendButton.disabled = items.length === 0;
-}
-
-function buildMessage() {
-  const items = Array.from(selected.values());
-  const total = items.reduce((sum, { product, qty }) => sum + product.price * qty, 0);
-  const lines = [];
-
-  lines.push("Oi! Quero fazer um pedido:");
-  lines.push("");
-
-  if (items.length > 0) {
-    lines.push("Itens:");
-    items.forEach(({ product, qty }, index) => {
+    const lines = ["Oi! Quero fazer um pedido:", "", "Itens:"];
+    selectedItems.forEach(({ product, qty }, index) => {
       const subtotal = product.price * qty;
-      lines.push(qty > 1 ? `${index + 1}. ${product.name} x${qty} - ${brl.format(subtotal)}` : `${index + 1}. ${product.name} - ${brl.format(subtotal)}`);
+      lines.push(
+        qty > 1
+          ? `${index + 1}. ${product.name} x${qty} - ${brl.format(subtotal)}`
+          : `${index + 1}. ${product.name} - ${brl.format(subtotal)}`,
+      );
     });
-    lines.push("");
-  }
+    lines.push("", `Total: ${brl.format(totalValue)}`, "");
 
-  lines.push(`Total: ${brl.format(total)}`);
-  lines.push("");
+    if (customerName.trim()) lines.push(`Nome: ${customerName.trim()}`);
+    if (notes.trim()) lines.push(`Obs: ${notes.trim()}`);
 
-  if (customerName.value.trim()) {
-    lines.push(`Nome: ${customerName.value.trim()}`);
-  }
+    const link = `https://wa.me/${normalizeWhatsapp(whatsapp)}?text=${encodeURIComponent(lines.join("\n"))}`;
+    setSendingOrder(true);
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    window.open(link, "_blank", "noopener,noreferrer");
+    setSendingOrder(false);
+    setToast("Pedido pronto. Abrindo WhatsApp...");
+  };
 
-  if (notes.value.trim()) {
-    lines.push(`Obs: ${notes.value.trim()}`);
-  }
+  return e(
+    React.Fragment,
+    null,
+    e(
+      "header",
+      { className: "topbar" },
+      e(
+        "div",
+        { className: "brand-block" },
+        e("h1", null, "Bibi Papelaria"),
+        e("p", null, "Escolha seus favoritos e monte seu pedido com praticidade."),
+      ),
+      e("a", { className: "admin-link", href: "/admin/", "aria-label": "Abrir painel administrativo" }, "Area admin"),
+    ),
 
-  return lines.join("\n");
-}
+    e(
+      "main",
+      null,
+      e(
+        "section",
+        { className: "section-head", "aria-label": "Catalogo de produtos" },
+        e("h2", null, "Nossos produtos"),
+        e("p", null, "Entre nos detalhes para ver galeria completa e avaliacoes."),
+      ),
+      e(
+        "section",
+        { className: "store-menu card" },
+        e(
+          "div",
+          { className: "store-menu__item" },
+          e("label", { htmlFor: "search-products" }, "Buscar"),
+          e("input", {
+            id: "search-products",
+            type: "search",
+            placeholder: "Nome ou descricao",
+            value: search,
+            onChange: (ev) => setSearch(ev.target.value),
+          }),
+        ),
+        e(
+          "div",
+          { className: "store-menu__item" },
+          e("label", { htmlFor: "sort-products" }, "Ordenar"),
+          e(
+            "select",
+            {
+              id: "sort-products",
+              value: sortBy,
+              onChange: (ev) => setSortBy(ev.target.value),
+            },
+            e("option", { value: "featured" }, "Nome A-Z"),
+            e("option", { value: "price-asc" }, "Preco: menor primeiro"),
+            e("option", { value: "price-desc" }, "Preco: maior primeiro"),
+            e("option", { value: "rating" }, "Melhor avaliacao"),
+          ),
+        ),
+        e(
+          "div",
+          { className: "store-menu__item store-menu__range" },
+          e("label", null, "Faixa de preco"),
+          e(
+            "div",
+            { className: "range-grid" },
+            e("input", {
+              type: "number",
+              min: "0",
+              step: "1",
+              placeholder: "Min",
+              value: minPrice,
+              onChange: (ev) => setMinPrice(ev.target.value),
+              "aria-label": "Preco minimo",
+            }),
+            e("input", {
+              type: "number",
+              min: "0",
+              step: "1",
+              placeholder: "Max",
+              value: maxPrice,
+              onChange: (ev) => setMaxPrice(ev.target.value),
+              "aria-label": "Preco maximo",
+            }),
+          ),
+        ),
+        e(
+          "div",
+          { className: "store-menu__stats" },
+          e("strong", null, `${filteredProducts.length}`),
+          e("span", null, filteredProducts.length === 1 ? "produto visivel" : "produtos visiveis"),
+        ),
+      ),
+      e("p", { id: "data-status", className: "data-status", role: "status", "aria-live": "polite" }, statusText),
+      e(
+        "section",
+        { className: "gallery", "aria-live": "polite" },
+        loading
+          ? Array.from({ length: 6 }).map((_, idx) =>
+              e(
+                "article",
+                { className: "card skeleton", key: `skeleton-${idx}` },
+                e("div", { className: "image-wrap" }),
+                e(
+                  "div",
+                  { className: "card-body" },
+                  e("div", { className: "skeleton-line", style: { width: "70%", height: "16px", marginBottom: "8px" } }),
+                  e("div", { className: "skeleton-line", style: { width: "55%", height: "14px" } }),
+                ),
+              ),
+            )
+          : filteredProducts.map((product, index) =>
+              e(ProductCard, {
+                key: product.id,
+                product,
+                selectedQty: cart[product.id]?.qty || 0,
+                onOpen: openProduct,
+                index,
+              }),
+            ),
+      ),
+    ),
 
-sendButton.addEventListener("click", async () => {
-  if (selected.size === 0) {
-    alert("Selecione pelo menos um item antes de enviar.");
-    return;
-  }
-
-  const message = buildMessage();
-  const whatsappDestino = normalizeWhatsapp(WHATSAPP_LOJA);
-  const url = `https://wa.me/${whatsappDestino}?text=${encodeURIComponent(message)}`;
-
-  sendButton.disabled = true;
-  sendButton.classList.add("is-loading");
-  sendButton.innerHTML = '<span class="spinner" aria-hidden="true"></span> Preparando pedido...';
-
-  await new Promise((resolve) => setTimeout(resolve, 700));
-  showToast("Pedido pronto. Abrindo WhatsApp...");
-  window.open(url, "_blank", "noopener,noreferrer");
-
-  sendButton.classList.remove("is-loading");
-  sendButton.innerHTML = sendButtonDefaultContent;
-  updateSummary();
-});
-
-productAddButton.addEventListener("click", addFromModal);
-modalClose.addEventListener("click", closeProductModal);
-modal.addEventListener("click", (event) => {
-  if (event.target && event.target.dataset.closeModal === "true") {
-    closeProductModal();
-  }
-});
-
-reviewForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  if (!currentProduct) return;
-
-  const authorName = document.getElementById("review-name").value.trim();
-  const rating = Number(document.getElementById("review-rating").value || 0);
-  const comment = document.getElementById("review-comment").value.trim();
-
-  if (!authorName || !comment || rating < 1 || rating > 5) {
-    showToast("Preencha os campos da avaliacao.");
-    return;
-  }
-
-  try {
-    const response = await fetch("/api/reviews", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        productId: currentProduct.id,
-        authorName,
-        rating,
-        comment,
+    e(
+      "aside",
+      { className: "checkout", "aria-labelledby": "checkout-title" },
+      e("h2", { id: "checkout-title" }, "Seu pedido"),
+      e("label", { htmlFor: "customer-name" }, "Seu nome"),
+      e("input", {
+        id: "customer-name",
+        type: "text",
+        placeholder: "Ex.: Maria",
+        autoComplete: "name",
+        value: customerName,
+        onChange: (ev) => setCustomerName(ev.target.value),
       }),
-    });
+      e("label", { htmlFor: "notes" }, "Observacoes"),
+      e("textarea", {
+        id: "notes",
+        rows: 4,
+        placeholder: "Ex.: Quero entrega para amanha",
+        value: notes,
+        onChange: (ev) => setNotes(ev.target.value),
+      }),
+      e(
+        "div",
+        { className: "summary" },
+        e("span", null, `${totalQty} ${totalQty === 1 ? "item selecionado" : "itens selecionados"}`),
+        e("strong", null, brl.format(totalValue)),
+      ),
+      e(
+        "ul",
+        { className: "selected-list" },
+        selectedItems.map(({ product, qty }) =>
+          e(
+            "li",
+            { className: "cart-item", key: product.id },
+            e("span", { className: "cart-item-name" }, product.name),
+            e(
+              "div",
+              { className: "cart-item-controls" },
+              e("button", { className: "qty-btn", type: "button", onClick: () => changeQty(product.id, -1) }, "-"),
+              e("span", { className: "qty-value" }, qty),
+              e("button", { className: "qty-btn", type: "button", onClick: () => changeQty(product.id, 1) }, "+"),
+              e("span", { className: "cart-item-price" }, brl.format(product.price * qty)),
+            ),
+          ),
+        ),
+      ),
+      e(
+        "button",
+        {
+          className: `whatsapp-btn${sendingOrder ? " is-loading" : ""}`,
+          type: "button",
+          disabled: selectedItems.length === 0 || sendingOrder,
+          onClick: sendWhatsapp,
+        },
+        sendingOrder ? "Preparando pedido..." : "Enviar pedido no WhatsApp",
+      ),
+    ),
 
-    if (!response.ok) {
-      throw new Error("Falha ao enviar avaliacao");
-    }
+    e(
+      "footer",
+      { className: "site-footer" },
+      e("p", null, "© 2026 Bibi Papelaria · Feito com carinho"),
+    ),
 
-    reviewForm.reset();
-    showToast("Avaliacao enviada para aprovacao.");
-  } catch (error) {
-    showToast("Nao foi possivel enviar a avaliacao.");
-  }
-});
+    modalProduct
+      ? e(ProductModal, {
+          product: modalProduct,
+          activeImage,
+          onImageSelect: setActiveImage,
+          onClose: () => setModalProduct(null),
+          onAdd: addToCart,
+          reviewForm,
+          onReviewForm,
+          onReviewSubmit: submitReview,
+          reviewSending,
+        })
+      : null,
 
-async function init() {
-  showSkeletons();
-  await loadProducts();
-  renderGallery();
-  updateSummary();
+    toast ? e("div", { className: "toast toast-visible", role: "status", "aria-live": "polite" }, toast) : null,
+  );
 }
 
-init();
+const storeRoot = document.getElementById("store-root");
+if (storeRoot) {
+  const root = ReactDOM.createRoot(storeRoot);
+  root.render(e(App));
+}
