@@ -234,6 +234,7 @@ function ProductModal({
   onReviewForm,
   onReviewSubmit,
   reviewSending,
+  isMobile,
 }) {
   if (!product) return null;
 
@@ -389,7 +390,7 @@ function ProductModal({
 
   return e(
     "div",
-    { className: "product-modal is-open", role: "dialog", "aria-modal": "true", "aria-hidden": "false" },
+    { className: `product-modal is-open${isMobile ? " is-mobile" : ""}`, role: "dialog", "aria-modal": "true", "aria-hidden": "false" },
     e("div", { className: "product-modal__backdrop", onClick: onClose }),
     e(
       "article",
@@ -715,6 +716,7 @@ function App() {
   const [reviewSending, setReviewSending] = React.useState(false);
   const [reviewForm, setReviewForm] = React.useState({ name: "", rating: "5", comment: "" });
   const [sendingOrder, setSendingOrder] = React.useState(false);
+  const [isMobile, setIsMobile] = React.useState(window.innerWidth <= 560);
 
   React.useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -730,6 +732,15 @@ function App() {
       document.body.style.touchAction = previousTouchAction;
     };
   }, [modalProduct]);
+
+  React.useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 560);
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   React.useEffect(() => {
     let alive = true;
@@ -1145,6 +1156,7 @@ function App() {
           onReviewForm,
           onReviewSubmit: submitReview,
           reviewSending,
+          isMobile,
         })
       : null,
 
