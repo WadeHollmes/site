@@ -29,6 +29,79 @@ const fallbackProducts = [
 
 const e = React.createElement;
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+const STORE_DRAFT_KEY = "store_checkout_draft_v1";
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function readStoreDraft() {
+  try {
+    const raw = localStorage.getItem(STORE_DRAFT_KEY);
+    if (!raw) {
+      return { cart: {}, customerName: "", notes: "" };
+    }
+
+    const parsed = JSON.parse(raw);
+    const inputCart = parsed && typeof parsed.cart === "object" ? parsed.cart : {};
+    const safeCart = {};
+
+    Object.entries(inputCart).forEach(([lineKey, item]) => {
+      if (!item || typeof item !== "object") return;
+      const product = item.product;
+      const qty = Number(item.qty || 0);
+      if (!product || typeof product !== "object" || !product.id || qty <= 0) return;
+
+      safeCart[lineKey] = {
+        product: normalizeProduct(product),
+        qty: Math.max(1, Math.trunc(qty)),
+        variantLabel: String(item.variantLabel || "").trim(),
+      };
+    });
+
+    return {
+      cart: safeCart,
+      customerName: typeof parsed.customerName === "string" ? parsed.customerName : "",
+      notes: typeof parsed.notes === "string" ? parsed.notes : "",
+    };
+  } catch (_) {
+    return { cart: {}, customerName: "", notes: "" };
+  }
+}
+
+function writeStoreDraft(draft) {
+  try {
+    const compactCart = {};
+    Object.entries(draft?.cart || {}).forEach(([lineKey, item]) => {
+      if (!item?.product) return;
+      compactCart[lineKey] = {
+        qty: Math.max(1, Math.trunc(Number(item.qty || 1))),
+        variantLabel: String(item.variantLabel || "").trim(),
+        product: {
+          id: item.product.id,
+          slug: item.product.slug,
+          name: item.product.name,
+          price: Number(item.product.price || 0),
+          image: item.product.image || "",
+          stockStatus: item.product.stockStatus || "in_stock",
+          stockQty: Number.isInteger(item.product.stockQty) ? item.product.stockQty : null,
+          variants: Array.isArray(item.product.variants) ? item.product.variants : [],
+        },
+      };
+    });
+
+    localStorage.setItem(
+      STORE_DRAFT_KEY,
+      JSON.stringify({
+        cart: compactCart,
+        customerName: String(draft?.customerName || ""),
+        notes: String(draft?.notes || ""),
+      }),
+    );
+  } catch (_) {
+    // Ignora erros de quota/privacidade no armazenamento local.
+  }
+}
 
 function normalizeWhatsapp(value) {
   return String(value || "").replace(/\D/g, "");
@@ -39,6 +112,15 @@ function normalizeProduct(raw) {
     ? raw.images.filter(Boolean)
     : [raw.image].filter(Boolean);
 
+  const variants = Array.isArray(raw.variants)
+    ? Array.from(new Set(raw.variants.map((item) => String(item || "").trim()).filter(Boolean)))
+    : [];
+
+  const stockStatus = String(raw.stockStatus || "in_stock").toLowerCase();
+  const allowedStock = ["in_stock", "low_stock", "out_of_stock", "pre_order"];
+  const safeStockStatus = allowedStock.includes(stockStatus) ? stockStatus : "in_stock";
+  const stockQty = Number.isInteger(raw.stockQty) ? Math.max(0, raw.stockQty) : null;
+
   return {
     ...raw,
     images,
@@ -47,10 +129,25 @@ function normalizeProduct(raw) {
     rating: Number(raw.rating || 0),
     reviewCount: Number(raw.reviewCount || 0),
     price: Number(raw.price || 0),
+    variants,
+    stockStatus: safeStockStatus,
+    stockQty,
   };
 }
 
-function FadeImage({ src, alt, loading = "lazy", className = "", onLoadStateChange }) {
+function stockStatusLabel(status) {
+  if (status === "low_stock") return "Ultimas unidades";
+  if (status === "out_of_stock") return "Sem estoque";
+  if (status === "pre_order") return "Sob encomenda";
+  return "Disponivel";
+}
+
+function buildCartLineKey(productId, variantLabel) {
+  const variant = String(variantLabel || "").trim();
+  return variant ? `${productId}::${variant}` : String(productId);
+}
+
+function FadeImage({ src, alt, loading = "lazy", className = "", onLoadStateChange, fetchPriority = "auto" }) {
   const [loaded, setLoaded] = React.useState(false);
 
   React.useEffect(() => {
@@ -67,6 +164,7 @@ function FadeImage({ src, alt, loading = "lazy", className = "", onLoadStateChan
     src,
     alt,
     loading,
+    fetchPriority,
     decoding: "async",
     className: `${className}${loaded ? " img-ready" : ""}`.trim(),
     onLoad: () => setLoaded(true),
@@ -107,7 +205,8 @@ function ProductCard({ product, selectedQty, onOpen, index }) {
         ? e(FadeImage, {
             src: product.image,
             alt: product.name,
-            loading: "lazy",
+            loading: index < 2 ? "eager" : "lazy",
+            fetchPriority: index < 2 ? "high" : "auto",
             onLoadStateChange: setImageLoaded,
           })
         : null,
@@ -129,6 +228,8 @@ function ProductModal({
   onClose,
   onAdd,
   cartQty,
+  selectedVariant,
+  onVariantChange,
   reviewForm,
   onReviewForm,
   onReviewSubmit,
@@ -138,8 +239,153 @@ function ProductModal({
 
   const images = product.images?.length ? product.images : ["linear-gradient(140deg, #f2b5ca, #e89ab6)"];
   const mainImage = activeImage || images[0];
+  const activeIndex = Math.max(0, images.findIndex((src) => src === mainImage));
   const hasMainRemote = /^https?:\/\//i.test(mainImage || "");
+  const stockStatus = product.stockStatus || "in_stock";
+  const isOutOfStock = stockStatus === "out_of_stock";
+  const canAddToCart = stockStatus === "in_stock" || stockStatus === "low_stock" || stockStatus === "pre_order";
+  const stockLabel = stockStatusLabel(stockStatus);
   const [mainLoaded, setMainLoaded] = React.useState(false);
+  const [isImageFullscreen, setIsImageFullscreen] = React.useState(false);
+  const [loadedThumbIndexes, setLoadedThumbIndexes] = React.useState(() => new Set([0, 1]));
+  const [lightboxScale, setLightboxScale] = React.useState(1);
+  const [lightboxOffset, setLightboxOffset] = React.useState({ x: 0, y: 0 });
+  const pointersRef = React.useRef(new Map());
+  const panStartRef = React.useRef(null);
+  const pinchStartRef = React.useRef(null);
+
+  const resetLightboxView = React.useCallback(() => {
+    setLightboxScale(1);
+    setLightboxOffset({ x: 0, y: 0 });
+    pointersRef.current.clear();
+    panStartRef.current = null;
+    pinchStartRef.current = null;
+  }, []);
+
+  const closeFullscreen = React.useCallback(() => {
+    setIsImageFullscreen(false);
+    resetLightboxView();
+  }, [resetLightboxView]);
+
+  React.useEffect(() => {
+    setLoadedThumbIndexes(new Set([activeIndex, Math.max(0, activeIndex - 1), activeIndex + 1]));
+  }, [activeIndex, product?.id]);
+
+  React.useEffect(() => {
+    closeFullscreen();
+  }, [product?.id, mainImage]);
+
+  React.useEffect(() => {
+    if (lightboxScale <= 1) {
+      setLightboxOffset({ x: 0, y: 0 });
+    }
+  }, [lightboxScale]);
+
+  React.useEffect(() => {
+    if (!isImageFullscreen) return undefined;
+
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") {
+        closeFullscreen();
+      }
+
+      if (event.key === "+" || event.key === "=") {
+        setLightboxScale((prev) => clamp(prev + 0.25, 1, 4));
+      }
+
+      if (event.key === "-") {
+        setLightboxScale((prev) => clamp(prev - 0.25, 1, 4));
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [closeFullscreen, isImageFullscreen]);
+
+  const onLightboxPointerDown = React.useCallback(
+    (event) => {
+      pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+      if (pointersRef.current.size === 1) {
+        panStartRef.current = {
+          x: event.clientX,
+          y: event.clientY,
+          offsetX: lightboxOffset.x,
+          offsetY: lightboxOffset.y,
+        };
+      }
+
+      if (pointersRef.current.size === 2) {
+        const points = Array.from(pointersRef.current.values());
+        const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+        pinchStartRef.current = {
+          distance,
+          scale: lightboxScale,
+        };
+      }
+
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    [lightboxOffset.x, lightboxOffset.y, lightboxScale],
+  );
+
+  const onLightboxPointerMove = React.useCallback(
+    (event) => {
+      if (!pointersRef.current.has(event.pointerId)) return;
+      pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+      if (pointersRef.current.size >= 2 && pinchStartRef.current) {
+        const points = Array.from(pointersRef.current.values());
+        const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+        const factor = pinchStartRef.current.distance > 0 ? distance / pinchStartRef.current.distance : 1;
+        setLightboxScale(clamp(pinchStartRef.current.scale * factor, 1, 4));
+        return;
+      }
+
+      if (pointersRef.current.size === 1 && panStartRef.current && lightboxScale > 1) {
+        const deltaX = event.clientX - panStartRef.current.x;
+        const deltaY = event.clientY - panStartRef.current.y;
+        setLightboxOffset({
+          x: panStartRef.current.offsetX + deltaX,
+          y: panStartRef.current.offsetY + deltaY,
+        });
+      }
+    },
+    [lightboxScale],
+  );
+
+  const onLightboxPointerUp = React.useCallback((event) => {
+    pointersRef.current.delete(event.pointerId);
+
+    if (pointersRef.current.size < 2) {
+      pinchStartRef.current = null;
+    }
+
+    if (pointersRef.current.size === 1) {
+      const onlyPoint = Array.from(pointersRef.current.values())[0];
+      panStartRef.current = {
+        x: onlyPoint.x,
+        y: onlyPoint.y,
+        offsetX: lightboxOffset.x,
+        offsetY: lightboxOffset.y,
+      };
+      return;
+    }
+
+    if (pointersRef.current.size === 0) {
+      panStartRef.current = null;
+    }
+  }, [lightboxOffset.x, lightboxOffset.y]);
+
+  const onLightboxDoubleClick = React.useCallback(() => {
+    setLightboxScale((prev) => {
+      const next = prev > 1 ? 1 : 2;
+      if (next === 1) {
+        setLightboxOffset({ x: 0, y: 0 });
+      }
+      return next;
+    });
+  }, []);
 
   return e(
     "div",
@@ -164,6 +410,18 @@ function ProductModal({
             {
               className: `product-gallery__main${hasMainRemote && mainLoaded ? " is-loaded" : ""}`,
               style: hasMainRemote ? undefined : { background: mainImage },
+              onClick: hasMainRemote ? () => setIsImageFullscreen(true) : undefined,
+              onKeyDown: hasMainRemote
+                ? (event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setIsImageFullscreen(true);
+                    }
+                  }
+                : undefined,
+              role: hasMainRemote ? "button" : undefined,
+              tabIndex: hasMainRemote ? 0 : undefined,
+              "aria-label": hasMainRemote ? `Abrir imagem de ${product.name} em tela cheia` : undefined,
             },
             hasMainRemote
               ? e(FadeImage, {
@@ -174,6 +432,17 @@ function ProductModal({
                 })
               : null,
           ),
+          hasMainRemote
+            ? e(
+                "button",
+                {
+                  className: "gallery-fullscreen-btn",
+                  type: "button",
+                  onClick: () => setIsImageFullscreen(true),
+                },
+                "Ver em tela cheia",
+              )
+            : null,
           e(
             "div",
             { className: "product-gallery__thumbs" },
@@ -186,24 +455,46 @@ function ProductModal({
                   key: `${product.id}-thumb-${idx}`,
                   className: `thumb-btn${active ? " is-active" : ""}`,
                   type: "button",
-                  onClick: () => onImageSelect(src),
+                  onClick: () => {
+                    setLoadedThumbIndexes((prev) => {
+                      const next = new Set(prev);
+                      next.add(idx);
+                      next.add(Math.max(0, idx - 1));
+                      next.add(idx + 1);
+                      return next;
+                    });
+                    onImageSelect(src);
+                  },
                   style: isRemote ? undefined : { background: src },
                 },
                 isRemote
-                  ? e(FadeImage, {
-                      src,
-                      alt: "Miniatura",
-                      loading: "lazy",
-                    })
+                  ? loadedThumbIndexes.has(idx)
+                    ? e(FadeImage, {
+                        src,
+                        alt: "Miniatura",
+                        loading: "lazy",
+                      })
+                    : e("span", { className: "thumb-placeholder", "aria-hidden": "true" })
                   : null,
               );
             }),
+          ),
+          e(
+            "p",
+            { className: "product-gallery__hint" },
+            "No celular, toque nas miniaturas para ver todos os detalhes do produto.",
           ),
         ),
         e(
           "section",
           { className: "product-info" },
           e("h3", null, product.name),
+          e(
+            "p",
+            { className: `stock-pill stock-pill--${stockStatus}` },
+            stockLabel,
+            Number.isInteger(product.stockQty) ? ` · ${product.stockQty} un.` : "",
+          ),
           e("p", { className: "product-price" }, brl.format(product.price || 0)),
           e(
             "p",
@@ -213,6 +504,28 @@ function ProductModal({
               : "Sem avaliações ainda",
           ),
           e("p", { className: "product-description" }, product.description || "Sem descrição."),
+          product.variants?.length
+            ? e(
+                "div",
+                { className: "variant-block" },
+                e("label", { htmlFor: "product-variant" }, "Variação"),
+                e(
+                  "select",
+                  {
+                    id: "product-variant",
+                    value: selectedVariant,
+                    onChange: (ev) => onVariantChange(ev.target.value),
+                  },
+                  product.variants.map((variant) =>
+                    e(
+                      "option",
+                      { key: `${product.id}-variant-${variant}`, value: variant },
+                      variant,
+                    ),
+                  ),
+                ),
+              )
+            : null,
           e(
             "div",
             { className: "product-actions" },
@@ -221,9 +534,14 @@ function ProductModal({
               {
                 className: `whatsapp-btn${cartQty > 0 ? " is-in-cart" : ""}`,
                 type: "button",
-                onClick: () => onAdd(product),
+                onClick: () => onAdd(product, selectedVariant),
+                disabled: !canAddToCart,
               },
-              cartQty > 0 ? `No carrinho (${cartQty}) · adicionar mais` : "Adicionar ao carrinho",
+              isOutOfStock
+                ? "Indisponível no momento"
+                : cartQty > 0
+                  ? `No carrinho (${cartQty}) · adicionar mais`
+                  : "Adicionar ao carrinho",
             ),
           ),
           e(
@@ -293,23 +611,125 @@ function ProductModal({
         ),
       ),
     ),
+    isImageFullscreen && hasMainRemote
+      ? e(
+          "div",
+          {
+            className: "image-lightbox is-open",
+            role: "dialog",
+            "aria-modal": "true",
+            "aria-label": `Imagem ampliada de ${product.name}`,
+          },
+          e("button", {
+            className: "image-lightbox__backdrop",
+            type: "button",
+            onClick: closeFullscreen,
+            "aria-label": "Fechar visualização em tela cheia",
+          }),
+          e(
+            "div",
+            { className: "image-lightbox__content" },
+            e(
+              "button",
+              {
+                className: "image-lightbox__close",
+                type: "button",
+                onClick: closeFullscreen,
+                "aria-label": "Fechar visualização em tela cheia",
+              },
+              "×",
+            ),
+            e(
+              "div",
+              {
+                className: "image-lightbox__stage",
+                onPointerDown: onLightboxPointerDown,
+                onPointerMove: onLightboxPointerMove,
+                onPointerUp: onLightboxPointerUp,
+                onPointerCancel: onLightboxPointerUp,
+                onDoubleClick: onLightboxDoubleClick,
+              },
+              e("img", {
+                src: mainImage,
+                alt: product.name,
+                className: "image-lightbox__img",
+                style: {
+                  transform: `translate(${Math.round(lightboxOffset.x)}px, ${Math.round(lightboxOffset.y)}px) scale(${lightboxScale.toFixed(3)})`,
+                },
+              }),
+            ),
+            e(
+              "div",
+              { className: "image-lightbox__controls" },
+              e(
+                "button",
+                {
+                  type: "button",
+                  className: "image-lightbox__control-btn",
+                  onClick: () => setLightboxScale((prev) => clamp(prev - 0.25, 1, 4)),
+                  "aria-label": "Diminuir zoom",
+                },
+                "-",
+              ),
+              e("strong", null, `${Math.round(lightboxScale * 100)}%`),
+              e(
+                "button",
+                {
+                  type: "button",
+                  className: "image-lightbox__control-btn",
+                  onClick: () => setLightboxScale((prev) => clamp(prev + 0.25, 1, 4)),
+                  "aria-label": "Aumentar zoom",
+                },
+                "+",
+              ),
+              e(
+                "button",
+                {
+                  type: "button",
+                  className: "image-lightbox__control-btn",
+                  onClick: resetLightboxView,
+                },
+                "Reset",
+              ),
+            ),
+            e("p", { className: "image-lightbox__hint" }, "Use dois dedos para ampliar e arraste para explorar detalhes."),
+          ),
+        )
+      : null,
   );
 }
 
 function App() {
+  const initialDraft = React.useMemo(() => readStoreDraft(), []);
   const [products, setProducts] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [statusText, setStatusText] = React.useState("Carregando catálogo...");
   const [toast, setToast] = React.useState("");
-  const [cart, setCart] = React.useState({});
-  const [customerName, setCustomerName] = React.useState("");
-  const [notes, setNotes] = React.useState("");
+  const [cart, setCart] = React.useState(initialDraft.cart);
+  const [customerName, setCustomerName] = React.useState(initialDraft.customerName);
+  const [notes, setNotes] = React.useState(initialDraft.notes);
   const [whatsapp, setWhatsapp] = React.useState("55119997635107");
   const [modalProduct, setModalProduct] = React.useState(null);
   const [activeImage, setActiveImage] = React.useState("");
+  const [modalVariant, setModalVariant] = React.useState("");
   const [reviewSending, setReviewSending] = React.useState(false);
   const [reviewForm, setReviewForm] = React.useState({ name: "", rating: "5", comment: "" });
   const [sendingOrder, setSendingOrder] = React.useState(false);
+
+  React.useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    const previousTouchAction = document.body.style.touchAction;
+
+    if (modalProduct) {
+      document.body.style.overflow = "hidden";
+      document.body.style.touchAction = "none";
+    }
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.body.style.touchAction = previousTouchAction;
+    };
+  }, [modalProduct]);
 
   React.useEffect(() => {
     let alive = true;
@@ -328,9 +748,15 @@ function App() {
           setWhatsapp(normalizeWhatsapp(payload.whatsapp) || "55119997635107");
         }
 
-        if (!response.ok || !Array.isArray(payload.products) || payload.products.length === 0) {
+        if (!response.ok || !Array.isArray(payload.products)) {
           setProducts(fallbackProducts.map(normalizeProduct));
           setStatusText("Usando catálogo local de exemplo.");
+          return;
+        }
+
+        if (payload.products.length === 0) {
+          setProducts([]);
+          setStatusText("No momento estamos sem produtos disponíveis.");
           return;
         }
 
@@ -357,7 +783,23 @@ function App() {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  const selectedItems = React.useMemo(() => Object.values(cart), [cart]);
+  React.useEffect(() => {
+    writeStoreDraft({ cart, customerName, notes });
+  }, [cart, customerName, notes]);
+
+  const selectedItems = React.useMemo(
+    () => Object.entries(cart).map(([lineKey, item]) => ({ lineKey, ...item })),
+    [cart],
+  );
+  const selectedQtyByProduct = React.useMemo(() => {
+    const map = {};
+    selectedItems.forEach((item) => {
+      const id = item.product?.id;
+      if (!id) return;
+      map[id] = (map[id] || 0) + Number(item.qty || 0);
+    });
+    return map;
+  }, [selectedItems]);
   const totalQty = React.useMemo(
     () => selectedItems.reduce((sum, item) => sum + item.qty, 0),
     [selectedItems],
@@ -384,26 +826,30 @@ function App() {
 
     setModalProduct(fullProduct);
     setActiveImage((fullProduct.images || [])[0] || "");
+    setModalVariant(Array.isArray(fullProduct.variants) && fullProduct.variants.length ? fullProduct.variants[0] : "");
   };
 
-  const addToCart = (product) => {
+  const addToCart = (product, variantLabel = "") => {
+    const lineKey = buildCartLineKey(product.id, variantLabel);
+
     setCart((prev) => {
-      const existing = prev[product.id];
+      const existing = prev[lineKey];
       const nextQty = existing ? existing.qty + 1 : 1;
       return {
         ...prev,
-        [product.id]: {
+        [lineKey]: {
           product,
+          variantLabel: String(variantLabel || "").trim(),
           qty: nextQty,
         },
       };
     });
-    setToast(`${product.name} adicionado ao pedido`);
+    setToast(variantLabel ? `${product.name} (${variantLabel}) adicionado ao pedido` : `${product.name} adicionado ao pedido`);
   };
 
-  const changeQty = (productId, delta) => {
+  const changeQty = (lineKey, delta) => {
     setCart((prev) => {
-      const current = prev[productId];
+      const current = prev[lineKey];
       if (!current) return prev;
 
       const newQty = current.qty + delta;
@@ -415,7 +861,7 @@ function App() {
 
       return {
         ...prev,
-        [productId]: {
+        [lineKey]: {
           ...current,
           qty: newQty,
         },
@@ -470,12 +916,13 @@ function App() {
     if (!selectedItems.length) return;
 
     const lines = ["Oi! Quero fazer um pedido:", "", "Itens:"];
-    selectedItems.forEach(({ product, qty }, index) => {
+    selectedItems.forEach(({ product, qty, variantLabel }, index) => {
       const subtotal = product.price * qty;
+      const itemName = variantLabel ? `${product.name} (${variantLabel})` : product.name;
       lines.push(
         qty > 1
-          ? `${index + 1}. ${product.name} x${qty} - ${brl.format(subtotal)}`
-          : `${index + 1}. ${product.name} - ${brl.format(subtotal)}`,
+          ? `${index + 1}. ${itemName} x${qty} - ${brl.format(subtotal)}`
+          : `${index + 1}. ${itemName} - ${brl.format(subtotal)}`,
       );
     });
     lines.push("", `Total: ${brl.format(totalValue)}`, "");
@@ -489,6 +936,12 @@ function App() {
     window.open(link, "_blank", "noopener,noreferrer");
     setSendingOrder(false);
     setToast("Pedido pronto. Abrindo WhatsApp...");
+  };
+
+  const goToCheckout = () => {
+    const panel = document.getElementById("checkout-panel");
+    if (!panel) return;
+    panel.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   return e(
@@ -525,21 +978,32 @@ function App() {
                 ),
               ),
             )
-          : products.map((product, index) =>
-              e(ProductCard, {
-                key: product.id,
-                product,
-                selectedQty: cart[product.id]?.qty || 0,
-                onOpen: openProduct,
-                index,
-              }),
-            ),
+          : products.length === 0
+            ? e(
+                "article",
+                { className: "gallery-empty" },
+                e("h3", null, "Catálogo em atualização"),
+                e(
+                  "p",
+                  null,
+                  "Estamos preparando novos itens para a vitrine. Volte em breve para conferir novidades.",
+                ),
+              )
+            : products.map((product, index) =>
+                e(ProductCard, {
+                  key: product.id,
+                  product,
+                  selectedQty: selectedQtyByProduct[product.id] || 0,
+                  onOpen: openProduct,
+                  index,
+                }),
+              ),
       ),
     ),
 
     e(
       "aside",
-      { className: "checkout", "aria-labelledby": "checkout-title" },
+      { className: "checkout", id: "checkout-panel", tabIndex: -1, "aria-labelledby": "checkout-title" },
       e("h2", { id: "checkout-title" }, "Seu pedido"),
       e("label", { htmlFor: "customer-name" }, "Seu nome"),
       e("input", {
@@ -567,20 +1031,42 @@ function App() {
       e(
         "ul",
         { className: "selected-list" },
-        selectedItems.map(({ product, qty }) =>
+        selectedItems.map(({ lineKey, product, qty, variantLabel }) =>
           e(
             "li",
-            { className: "cart-item", key: product.id },
-            e("span", { className: "cart-item-name" }, product.name),
+            { className: "cart-item", key: lineKey },
+            e(
+              "span",
+              { className: "cart-item-name" },
+              product.name,
+              variantLabel ? e("small", { className: "cart-item-variant" }, `Variação: ${variantLabel}`) : null,
+            ),
             e(
               "div",
               { className: "cart-item-controls" },
-              e("button", { className: "qty-btn", type: "button", onClick: () => changeQty(product.id, -1) }, "-"),
+              e("button", { className: "qty-btn", type: "button", onClick: () => changeQty(lineKey, -1) }, "-"),
               e("span", { className: "qty-value" }, qty),
-              e("button", { className: "qty-btn", type: "button", onClick: () => changeQty(product.id, 1) }, "+"),
+              e("button", { className: "qty-btn", type: "button", onClick: () => changeQty(lineKey, 1) }, "+"),
               e("span", { className: "cart-item-price" }, brl.format(product.price * qty)),
             ),
           ),
+        ),
+      ),
+      e(
+        "div",
+        { className: "checkout-row-actions" },
+        e(
+          "button",
+          {
+            className: "clear-cart-btn",
+            type: "button",
+            disabled: selectedItems.length === 0,
+            onClick: () => {
+              setCart({});
+              setToast("Carrinho limpo.");
+            },
+          },
+          "Limpar carrinho",
         ),
       ),
       e(
@@ -596,6 +1082,22 @@ function App() {
     ),
 
     e(
+      "button",
+      {
+        className: `mobile-cart-bar${totalQty > 0 ? " has-items" : ""}`,
+        type: "button",
+        onClick: goToCheckout,
+        "aria-label": "Ir para o pedido",
+      },
+      e("span", { className: "mobile-cart-bar__label" }, "Seu pedido"),
+      e(
+        "strong",
+        { className: "mobile-cart-bar__value" },
+        totalQty > 0 ? `${totalQty} item${totalQty > 1 ? "s" : ""} · ${brl.format(totalValue)}` : "Toque para revisar",
+      ),
+    ),
+
+    e(
       "footer",
       { className: "site-footer" },
       e("p", null, "© 2026 Bibi Papelaria · Feito com carinho"),
@@ -606,9 +1108,14 @@ function App() {
           product: modalProduct,
           activeImage,
           onImageSelect: setActiveImage,
-          onClose: () => setModalProduct(null),
+          onClose: () => {
+            setModalProduct(null);
+            setModalVariant("");
+          },
           onAdd: addToCart,
-          cartQty: cart[modalProduct.id]?.qty || 0,
+          cartQty: selectedQtyByProduct[modalProduct.id] || 0,
+          selectedVariant: modalVariant,
+          onVariantChange: setModalVariant,
           reviewForm,
           onReviewForm,
           onReviewSubmit: submitReview,

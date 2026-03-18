@@ -55,6 +55,7 @@ const NOTION_TIMEOUT_MS = Number(process.env.NOTION_TIMEOUT_MS || 10000);
 const PRODUCTS_SYNC_INTERVAL_MS = Number(process.env.PRODUCTS_SYNC_INTERVAL_MS || 300000);
 const WHATSAPP_LOJA = String(process.env.WHATSAPP_LOJA || "55119997635107").replace(/\D/g, "");
 const ENABLE_NOTION_DIAGNOSTICS = process.env.ENABLE_NOTION_DIAGNOSTICS === "true";
+const ENABLE_DEBUG_ENDPOINT = process.env.ENABLE_DEBUG_ENDPOINT === "true";
 const ADMIN_REVIEW_KEY = String(process.env.ADMIN_REVIEW_KEY || "");
 
 const PRODUCT_MAPPING_HELP = {
@@ -63,6 +64,9 @@ const PRODUCT_MAPPING_HELP = {
   description: "Description/rich_text",
   image: "Image/files.url ou Image/url",
   active: "Active/checkbox",
+  stockStatus: "StockStatus/select ou status (in_stock, low_stock, out_of_stock, pre_order)",
+  stockQty: "StockQty/number",
+  variants: "Variants/multi_select ou rich_text separado por virgula",
 };
 
 let lastSyncAt = 0;
@@ -80,6 +84,9 @@ CREATE TABLE IF NOT EXISTS products (
   description TEXT DEFAULT '',
   price REAL NOT NULL DEFAULT 0,
   image TEXT DEFAULT '',
+  stock_status TEXT NOT NULL DEFAULT 'in_stock',
+  stock_qty INTEGER,
+  variants_json TEXT NOT NULL DEFAULT '[]',
   active INTEGER NOT NULL DEFAULT 1,
   updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
@@ -109,17 +116,40 @@ CREATE INDEX IF NOT EXISTS idx_reviews_status ON reviews(status);
 CREATE INDEX IF NOT EXISTS idx_reviews_product ON reviews(product_id);
 `);
 
+function ensureColumn(tableName, columnName, alterSql) {
+  const columns = db.prepare(`PRAGMA table_info(${tableName})`).all();
+  const hasColumn = columns.some((column) => column.name === columnName);
+  if (!hasColumn) {
+    db.exec(alterSql);
+  }
+}
+
+ensureColumn(
+  "products",
+  "stock_status",
+  "ALTER TABLE products ADD COLUMN stock_status TEXT NOT NULL DEFAULT 'in_stock'",
+);
+ensureColumn("products", "stock_qty", "ALTER TABLE products ADD COLUMN stock_qty INTEGER");
+ensureColumn(
+  "products",
+  "variants_json",
+  "ALTER TABLE products ADD COLUMN variants_json TEXT NOT NULL DEFAULT '[]'",
+);
+
 const findSlugStmt = db.prepare("SELECT id FROM products WHERE slug = ?");
 const existingProductStmt = db.prepare("SELECT slug FROM products WHERE id = ?");
 const upsertProductStmt = db.prepare(`
-  INSERT INTO products (id, slug, name, description, price, image, active, updated_at)
-  VALUES (@id, @slug, @name, @description, @price, @image, @active, unixepoch())
+  INSERT INTO products (id, slug, name, description, price, image, stock_status, stock_qty, variants_json, active, updated_at)
+  VALUES (@id, @slug, @name, @description, @price, @image, @stockStatus, @stockQty, @variantsJson, @active, unixepoch())
   ON CONFLICT(id) DO UPDATE SET
     slug = excluded.slug,
     name = excluded.name,
     description = excluded.description,
     price = excluded.price,
     image = excluded.image,
+    stock_status = excluded.stock_status,
+    stock_qty = excluded.stock_qty,
+    variants_json = excluded.variants_json,
     active = excluded.active,
     updated_at = unixepoch()
 `);
@@ -134,6 +164,9 @@ SELECT
   p.name,
   p.price,
   p.description,
+  p.stock_status AS stockStatus,
+  p.stock_qty AS stockQty,
+  p.variants_json AS variantsJson,
   COALESCE((SELECT url FROM product_images pi WHERE pi.product_id = p.id ORDER BY pi.sort_order ASC LIMIT 1), p.image) AS image,
   COALESCE(ROUND(AVG(CASE WHEN r.status = 'approved' THEN r.rating END), 1), 0) AS rating,
   COALESCE(SUM(CASE WHEN r.status = 'approved' THEN 1 ELSE 0 END), 0) AS reviewCount
@@ -151,6 +184,9 @@ SELECT
   p.description,
   p.price,
   p.image,
+  p.stock_status AS stockStatus,
+  p.stock_qty AS stockQty,
+  p.variants_json AS variantsJson,
   p.active,
   COALESCE(ROUND(AVG(CASE WHEN r.status = 'approved' THEN r.rating END), 1), 0) AS rating,
   COALESCE(SUM(CASE WHEN r.status = 'approved' THEN 1 ELSE 0 END), 0) AS reviewCount
@@ -185,6 +221,44 @@ ORDER BY r.created_at ASC
 const updateReviewStatusStmt = db.prepare(
   "UPDATE reviews SET status = ?, approved_at = CASE WHEN ? = 'approved' THEN unixepoch() ELSE approved_at END WHERE id = ?",
 );
+
+function createMemoryRateLimiter({ windowMs, max, name }) {
+  const hitsByIp = new Map();
+
+  return (req, res, next) => {
+    const now = Date.now();
+    const ip = req.ip || req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
+    const hit = hitsByIp.get(ip);
+
+    if (!hit || now > hit.expiresAt) {
+      hitsByIp.set(ip, { count: 1, expiresAt: now + windowMs });
+      return next();
+    }
+
+    if (hit.count >= max) {
+      const retryAfterSec = Math.max(1, Math.ceil((hit.expiresAt - now) / 1000));
+      res.setHeader("Retry-After", String(retryAfterSec));
+      return res.status(429).json({
+        error: `Muitas tentativas em ${name}. Tente novamente em instantes.`,
+      });
+    }
+
+    hit.count += 1;
+    return next();
+  };
+}
+
+const reviewCreateRateLimiter = createMemoryRateLimiter({
+  windowMs: 60 * 1000,
+  max: 20,
+  name: "avaliacoes",
+});
+
+const adminRateLimiter = createMemoryRateLimiter({
+  windowMs: 60 * 1000,
+  max: 60,
+  name: "admin",
+});
 
 function buildUniqueSlug(baseSlug, productId) {
   const fallbackBase = baseSlug || slugify(productId) || "produto";
@@ -226,9 +300,73 @@ function parseNumber(prop) {
   return prop.number;
 }
 
+function parseOptionalNumber(prop) {
+  if (!prop || prop.type !== "number" || typeof prop.number !== "number") return null;
+  return prop.number;
+}
+
 function parseCheckbox(prop) {
   if (!prop || prop.type !== "checkbox") return true;
   return Boolean(prop.checkbox);
+}
+
+function normalizeStockStatus(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (["in_stock", "em_estoque", "disponivel", "available"].includes(raw)) return "in_stock";
+  if (["low_stock", "baixo_estoque", "ultimas_unidades", "low"].includes(raw)) return "low_stock";
+  if (["out_of_stock", "sem_estoque", "indisponivel", "sold_out"].includes(raw)) return "out_of_stock";
+  if (["pre_order", "sob_encomenda", "encomenda", "preorder"].includes(raw)) return "pre_order";
+  return "in_stock";
+}
+
+function parseStockStatus(prop) {
+  if (!prop) return "in_stock";
+
+  if (prop.type === "status" && prop.status?.name) {
+    return normalizeStockStatus(prop.status.name);
+  }
+
+  if (prop.type === "select" && prop.select?.name) {
+    return normalizeStockStatus(prop.select.name);
+  }
+
+  if (prop.type === "rich_text" && Array.isArray(prop.rich_text)) {
+    return normalizeStockStatus(prop.rich_text.map((item) => item.plain_text || "").join(" "));
+  }
+
+  if (prop.type === "formula" && prop.formula?.type === "string") {
+    return normalizeStockStatus(prop.formula.string);
+  }
+
+  return "in_stock";
+}
+
+function parseVariants(prop) {
+  if (!prop) return [];
+
+  if (prop.type === "multi_select" && Array.isArray(prop.multi_select)) {
+    return Array.from(
+      new Set(
+        prop.multi_select
+          .map((item) => String(item.name || "").trim())
+          .filter(Boolean),
+      ),
+    );
+  }
+
+  if (prop.type === "rich_text" && Array.isArray(prop.rich_text)) {
+    const text = prop.rich_text.map((item) => item.plain_text || "").join(" ");
+    return Array.from(
+      new Set(
+        text
+          .split(/[\n,;|]/g)
+          .map((item) => item.trim())
+          .filter(Boolean),
+      ),
+    );
+  }
+
+  return [];
 }
 
 function notionFileToImage(item) {
@@ -293,6 +431,18 @@ function mapNotionProduct(page) {
   const image = parseImage(props.Image || props.image || props.Foto || props.foto);
   const images = parseImages(props.Image || props.image || props.Foto || props.foto);
   const active = parseCheckbox(props.Active || props.active || props.Ativo || props.ativo);
+  const stockStatus = parseStockStatus(
+    props.StockStatus || props.stockStatus || props.Stock || props.stock || props.Estoque || props.estoque,
+  );
+  const stockQty = parseOptionalNumber(
+    props.StockQty || props.stockQty || props.Quantity || props.quantity || props.Qtd || props.qtd,
+  );
+  const variants = parseVariants(
+    props.Variants || props.variants || props.Opcoes || props.opcoes || props.Opções || props.opções,
+  );
+  const normalizedStockQty = Number.isFinite(stockQty) ? Math.max(0, Math.trunc(stockQty)) : null;
+  const normalizedStockStatus =
+    normalizedStockQty === 0 && stockStatus !== "pre_order" ? "out_of_stock" : stockStatus;
 
   return {
     id: page.id,
@@ -301,6 +451,9 @@ function mapNotionProduct(page) {
     price,
     image,
     images,
+    stockStatus: normalizedStockStatus,
+    stockQty: normalizedStockQty,
+    variants,
     active,
   };
 }
@@ -344,6 +497,42 @@ async function queryNotion(url, notionVersion, bodyPayload = { page_size: 100 })
 
   const payload = await response.json();
   return { ok: true, payload };
+}
+
+async function queryNotionAllPages(url, notionVersion) {
+  const allResults = [];
+  let nextCursor = undefined;
+
+  while (true) {
+    const body = {
+      page_size: 100,
+      ...(nextCursor ? { start_cursor: nextCursor } : {}),
+    };
+
+    const response = await queryNotion(url, notionVersion, body);
+    if (!response.ok) {
+      return response;
+    }
+
+    const payload = response.payload || {};
+    if (Array.isArray(payload.results)) {
+      allResults.push(...payload.results);
+    }
+
+    if (!payload.has_more || !payload.next_cursor) {
+      return {
+        ok: true,
+        payload: {
+          ...payload,
+          results: allResults,
+          has_more: false,
+          next_cursor: null,
+        },
+      };
+    }
+
+    nextCursor = payload.next_cursor;
+  }
 }
 
 async function searchAccessibleDatabases() {
@@ -394,7 +583,7 @@ async function fetchNotionProducts() {
     for (const candidateId of candidateIds) {
       const queryUrl = `https://api.notion.com/v1/${endpointBase}/${candidateId}/query`;
 
-      const attempt = await queryNotion(queryUrl, NOTION_VERSION);
+      const attempt = await queryNotionAllPages(queryUrl, NOTION_VERSION);
       if (attempt.ok) {
         payload = attempt.payload;
         break;
@@ -425,9 +614,7 @@ async function fetchNotionProducts() {
     );
   }
 
-  const products = (payload.results || [])
-    .map(mapNotionProduct)
-    .filter((p) => p.active && p.name && p.price > 0);
+  const products = (payload.results || []).map(mapNotionProduct).filter((p) => p.name && p.price > 0);
 
   return {
     configured: true,
@@ -439,7 +626,10 @@ async function fetchNotionProducts() {
 
 function syncProductsToDb(products) {
   const tx = db.transaction((items) => {
+    const seenIds = new Set();
+
     for (const product of items) {
+      seenIds.add(product.id);
       const baseSlug = slugify(product.name || product.id);
       const existing = existingProductStmt.get(product.id);
       const slug = existing?.slug || buildUniqueSlug(baseSlug, product.id);
@@ -451,6 +641,9 @@ function syncProductsToDb(products) {
         description: product.description || "",
         price: product.price,
         image: product.image || "",
+        stockStatus: product.stockStatus || "in_stock",
+        stockQty: Number.isInteger(product.stockQty) ? product.stockQty : null,
+        variantsJson: JSON.stringify(Array.isArray(product.variants) ? product.variants : []),
         active: product.active ? 1 : 0,
       });
 
@@ -460,6 +653,16 @@ function syncProductsToDb(products) {
         insertImageStmt.run(product.id, url, idx);
       });
     }
+
+    if (seenIds.size === 0) {
+      db.prepare("UPDATE products SET active = 0, updated_at = unixepoch() WHERE active = 1").run();
+      return;
+    }
+
+    const placeholders = Array.from(seenIds).map(() => "?").join(",");
+    db.prepare(
+      `UPDATE products SET active = 0, updated_at = unixepoch() WHERE id NOT IN (${placeholders}) AND active = 1`,
+    ).run(...Array.from(seenIds));
   });
 
   tx(products);
@@ -473,6 +676,16 @@ function readProductsFromDb() {
     description: row.description,
     price: row.price,
     image: row.image,
+    stockStatus: row.stockStatus || "in_stock",
+    stockQty: Number.isInteger(row.stockQty) ? row.stockQty : null,
+    variants: (() => {
+      try {
+        const parsed = JSON.parse(row.variantsJson || "[]");
+        return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+      } catch (_) {
+        return [];
+      }
+    })(),
     rating: Number(row.rating || 0),
     reviewCount: Number(row.reviewCount || 0),
   }));
@@ -496,6 +709,16 @@ function readProductDetailsFromDb(slug) {
     price: row.price,
     image: row.image,
     images: images.length ? images : [row.image].filter(Boolean),
+    stockStatus: row.stockStatus || "in_stock",
+    stockQty: Number.isInteger(row.stockQty) ? row.stockQty : null,
+    variants: (() => {
+      try {
+        const parsed = JSON.parse(row.variantsJson || "[]");
+        return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+      } catch (_) {
+        return [];
+      }
+    })(),
     rating: Number(row.rating || 0),
     reviewCount: Number(row.reviewCount || 0),
     reviews,
@@ -553,6 +776,8 @@ app.use("/api", (_, res, next) => {
   next();
 });
 
+app.use("/api/admin", adminRateLimiter);
+
 app.get("/api/products", async (_, res) => {
   try {
     await syncFromNotionIfNeeded(false);
@@ -597,7 +822,7 @@ app.get("/api/products/:slug", async (req, res) => {
   }
 });
 
-app.post("/api/reviews", (req, res) => {
+app.post("/api/reviews", reviewCreateRateLimiter, (req, res) => {
   const productId = String(req.body?.productId || "").trim();
   const authorName = String(req.body?.authorName || "").trim().slice(0, 80);
   const rating = Number(req.body?.rating || 0);
@@ -737,7 +962,14 @@ app.get("/api/test-notion", async (_, res) => {
   });
 });
 
-app.get("/api/debug", async (_, res) => {
+app.get("/api/debug", ensureAdmin, async (_, res) => {
+  if (!ENABLE_DEBUG_ENDPOINT) {
+    return res.status(404).json({
+      error: "Endpoint de debug desabilitado.",
+      hint: "Defina ENABLE_DEBUG_ENDPOINT=true para habilitar temporariamente.",
+    });
+  }
+
   const hasApiKey = !!NOTION_API_KEY && NOTION_API_KEY !== "";
   const hasDatabaseId = !!NOTION_DATABASE_ID && NOTION_DATABASE_ID !== "";
   const productCount = countProductsStmt.get()?.total || 0;
