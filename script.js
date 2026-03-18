@@ -992,7 +992,6 @@ function App() {
         e(
           "div",
           { className: "brand-block" },
-          e("p", { className: "eyebrow" }, "Papelaria autoral"),
           e("h1", null, "Bibi Papelaria"),
           e(
             "p",
