@@ -992,6 +992,27 @@ function App() {
         e(
           "div",
           { className: "brand-block" },
+          e(
+            "button",
+            {
+              className: "brand-logo-btn",
+              type: "button",
+              onClick: () => {
+                window.location.hash = "#/";
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              },
+              "aria-label": "Voltar para a página inicial",
+            },
+            e("img", {
+              className: "brand-logo",
+              src: "/logo.png",
+              alt: "Logo Bibi Papelaria",
+              loading: "eager",
+              onError: (ev) => {
+                ev.currentTarget.style.display = "none";
+              },
+            }),
+          ),
           e("h1", null, "Bibi Papelaria"),
           e(
             "p",

@@ -80,6 +80,31 @@ body {
   max-width: 660px;
 }
 
+.brand-logo-btn {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.brand-logo-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--brown-700) 70%, var(--rose-500) 30%);
+  outline-offset: 4px;
+  border-radius: 10px;
+}
+
+.brand-logo {
+  width: clamp(44px, 7vw, 64px);
+  height: clamp(44px, 7vw, 64px);
+  object-fit: contain;
+  display: block;
+  margin: 0 0 8px;
+}
+
 .eyebrow {
   margin: 0;
   font-size: 0.75rem;
@@ -522,6 +547,12 @@ main {
 
   .topbar-highlights {
     justify-content: flex-start;
+  }
+
+  .brand-logo {
+    width: 42px;
+    height: 42px;
+    margin: 0 0 6px;
   }
 
   .highlight-pill {
