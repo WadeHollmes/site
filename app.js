@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const express = require("express");
 const dotenv = require("dotenv");
 const Database = require("better-sqlite3");
@@ -746,7 +747,13 @@ function ensureAdmin(req, res, next) {
   }
 
   const key = req.header("x-admin-key");
-  if (!key || key !== ADMIN_REVIEW_KEY) {
+  if (!key) {
+    return res.status(401).json({ error: "Nao autorizado." });
+  }
+
+  const keyBuf = Buffer.from(String(key));
+  const expectedBuf = Buffer.from(String(ADMIN_REVIEW_KEY));
+  if (keyBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(keyBuf, expectedBuf)) {
     return res.status(401).json({ error: "Nao autorizado." });
   }
 
@@ -757,11 +764,13 @@ app.disable("x-powered-by");
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
   res.setHeader(
     "Content-Security-Policy",
-    "default-src 'self'; connect-src 'self'; img-src 'self' https: data:; script-src 'self' https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+    "default-src 'self'; connect-src 'self'; img-src 'self' https: data:; script-src 'self' https://unpkg.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
   );
 
   if (req.secure || req.headers["x-forwarded-proto"] === "https") {
@@ -797,20 +806,30 @@ app.get("/api/products", async (_, res) => {
     });
   } catch (error) {
     console.error("Erro completo da API:", error);
-    res.status(500).json({
+    const response = {
       configured: true,
       products: [],
       whatsapp: WHATSAPP_LOJA,
       error: "Falha ao consultar o catalogo.",
-      details: String(error.message || error),
-    });
+    };
+
+    if (ENABLE_NOTION_DIAGNOSTICS) {
+      response.details = String(error.message || error);
+    }
+
+    res.status(500).json(response);
   }
 });
 
 app.get("/api/products/:slug", async (req, res) => {
   try {
+    const slug = String(req.params.slug || "").trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]{0,79}$/.test(slug)) {
+      return res.status(400).json({ error: "Slug invalido." });
+    }
+
     await syncFromNotionIfNeeded(false);
-    const product = readProductDetailsFromDb(req.params.slug);
+    const product = readProductDetailsFromDb(slug);
 
     if (!product) {
       return res.status(404).json({ error: "Produto nao encontrado." });
@@ -996,6 +1015,7 @@ app.get("/api/debug", ensureAdmin, async (_, res) => {
 
 app.use(
   express.static(process.cwd(), {
+    dotfiles: "deny",
     setHeaders: (res, filePath) => {
       if (/\.(css|js)$/i.test(filePath)) {
         res.setHeader("Cache-Control", "public, max-age=0, must-revalidate");
@@ -1010,12 +1030,19 @@ app.use(
 );
 
 app.get("*", (req, res) => {
-  const filePath = path.resolve(process.cwd(), `.${req.path}`);
-  res.sendFile(filePath, (err) => {
-    if (err) {
-      res.sendFile(path.resolve(process.cwd(), "index.html"));
-    }
-  });
+  if (req.path.startsWith("/api/")) {
+    return res.status(404).json({ error: "Rota nao encontrada." });
+  }
+
+  if (req.path.startsWith("/miolo")) {
+    return res.sendFile(path.resolve(process.cwd(), "miolo/index.html"));
+  }
+
+  if (req.path.startsWith("/admin")) {
+    return res.sendFile(path.resolve(process.cwd(), "admin/index.html"));
+  }
+
+  return res.sendFile(path.resolve(process.cwd(), "index.html"));
 });
 
 app.listen(PORT, () => {
